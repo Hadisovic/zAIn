@@ -36,7 +36,7 @@
 
 ```bash
 # Build
-cd sesame-cat
+cd zain-companion
 npm run build
 
 # Run development server

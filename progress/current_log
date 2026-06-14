@@ -1,8 +1,8 @@
-Sesame Desktop Widget — Complete Session Log
+Zain Companion Desktop Widget — Complete Session Log
 =============================================
 
 ## Environment Setup
-- Created `/sesame-cat` Tauri v2 project (React 19 + TypeScript + Vite)
+- Created `/zain-companion` Tauri v2 project (React 19 + TypeScript + Vite)
 - Installed frontend deps: motion, @rive-app/react-canvas, zustand, @vaerone/use-flip, tailwindcss, @tailwindcss/vite, esbuild
 - Installed Tauri plugins: @tauri-apps/api, @tauri-apps/plugin-shell, @tauri-apps/plugin-store
 - Installed Rust toolchain (rustc 1.96.0, cargo 1.96.0) via rustup

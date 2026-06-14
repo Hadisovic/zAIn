@@ -1,7 +1,7 @@
 # 🌌 coming soon
 
 <div align="center">
-  <img src="sesame-cat/src/assets/hero.png" alt="zAIn Logo" width="180" style="border-radius: 24px; box-shadow: 0 8px 30px rgba(0,0,0,0.12);" />
+  <img src="zain-companion/src/assets/hero.png" alt="zAIn Logo" width="180" style="border-radius: 24px; box-shadow: 0 8px 30px rgba(0,0,0,0.12);" />
   
   <h3>zAIn</h3>
   <p><em>The Next-Generation Agentic Desktop Experience</em></p>
@@ -29,7 +29,7 @@ Here is a quick look at the main modules of the **zAIn** ecosystem:
 
 | Module | Purpose | Tech Stack |
 | :--- | :--- | :--- |
-| [`/sesame-cat`](./sesame-cat) | Main Desktop App Shell | React 19, TypeScript, Vite, Tauri v2 |
+| [`/zain-companion`](./zain-companion) | Main Desktop App Shell | React 19, TypeScript, Vite, Tauri v2 |
 | [`/csm`](./csm) | Core Session Manager | Python |
 | [`/clawd-on-desk`](./clawd-on-desk) | Local Desktop Agent Interface | Python / Node |
 | [`/progress`](./progress) | Development Roadmaps & Phases | Markdown Logs |

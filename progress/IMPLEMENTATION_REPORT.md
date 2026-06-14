@@ -1,4 +1,4 @@
-# Sesame AI Companion — Draggable Desktop Character Implementation Report
+# Zain Companion — Draggable Desktop Character Implementation Report
 
 **Date:** 2026-06-14  
 **Status:** ✅ Complete and tested  
@@ -8,7 +8,7 @@
 
 ## OVERVIEW
 
-Successfully transformed the Sesame AI companion from a **static full-screen chat panel** into a **draggable floating desktop character/blob overlay** with a small textbox input that appears on demand.
+Successfully transformed the Zain companion from a **static full-screen chat panel** into a **draggable floating desktop character/blob overlay** with a small textbox input that appears on demand.
 
 ### Key Achievement
 The companion now behaves like a **real desktop character** — it's a small, draggable blob on the desktop that opens a minimal textbox when clicked, without forcing the entire window to expand or take focus.
@@ -322,7 +322,7 @@ isDragging: boolean
 
 ```bash
 # Development with hot reload
-cd sesame-cat
+cd zain-companion
 npm run tauri dev
 
 # Production build (MSI + NSIS installers)

@@ -2,7 +2,7 @@
 
 ## What's New
 
-Your Sesame AI companion is now a **draggable floating blob** on your desktop!
+Your Zain companion is now a **draggable floating blob** on your desktop!
 
 ### User Experience
 

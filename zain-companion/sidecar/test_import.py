@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Quick test: verifies CSM + sidecar dependencies are all importable.
-Run with: python sidecar/test_import.py from sesame-cat/ directory
+Run with: python sidecar/test_import.py from zain-companion/ directory
 """
 import sys
 import os
