@@ -11,6 +11,7 @@ export interface Message {
 interface ChatState {
   messages: Message[]
   isProcessing: boolean
+  isPlayingAudio: boolean
   pendingRequests: Record<string, string>
   latestRequestId: string | null
   addMessage: (msg: Omit<Message, 'id' | 'timestamp'>) => string
@@ -19,6 +20,7 @@ interface ChatState {
   removeMessage: (id: string) => void
   clearMessages: () => void
   setProcessing: (v: boolean) => void
+  setPlayingAudio: (v: boolean) => void
   registerRequest: (requestId: string, messageId: string) => void
   getMessageIdForRequest: (requestId: string) => string | undefined
 }
@@ -26,6 +28,7 @@ interface ChatState {
 export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
   isProcessing: false,
+  isPlayingAudio: false,
   pendingRequests: {},
   latestRequestId: null,
   addMessage: (msg) => {
@@ -49,6 +52,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((s) => ({ messages: s.messages.filter((m) => m.id !== id) })),
   clearMessages: () => set({ messages: [], pendingRequests: {}, latestRequestId: null }),
   setProcessing: (v) => set({ isProcessing: v }),
+  setPlayingAudio: (v) => set({ isPlayingAudio: v }),
   registerRequest: (requestId, messageId) =>
     set((s) => ({
       pendingRequests: { ...s.pendingRequests, [requestId]: messageId },

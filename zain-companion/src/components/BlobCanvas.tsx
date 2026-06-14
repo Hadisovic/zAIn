@@ -3,8 +3,12 @@ import { invoke } from '@tauri-apps/api/core'
 import { useConfigStore } from '@/stores/config'
 import { useChatStore } from '@/stores/chat'
 import { BLOB } from '@/lib/constants'
+import { sendTts } from '@/lib/api'
 
 const DRAG_THRESHOLD = 5 // px — distinguish click from drag
+
+// Hard-coded reply for the demo. The real LLM replaces this in Phase 4 wiring.
+const STUB_REPLY = "Hi! I'm Zain — your desktop companion. The Sesame voice is working."
 
 function blobNoise(angle: number, time: number, amplitude: number): number {
   const n1 = Math.sin(angle * 2 + time * 0.8) * amplitude
@@ -20,6 +24,11 @@ export function BlobCanvas() {
   const isDragging = useConfigStore((s) => s.isDragging)
   const setIsDragging = useConfigStore((s) => s.setIsDragging)
   const isProcessing = useChatStore((s) => s.isProcessing)
+  const addMessage = useChatStore((s) => s.addMessage)
+  const updateMessage = useChatStore((s) => s.updateMessage)
+  const setProcessing = useChatStore((s) => s.setProcessing)
+  const speakerId = useConfigStore((s) => s.speakerId)
+  const quantization = useConfigStore((s) => s.quantization)
 
   const dragStartPos = useRef({ x: 0, y: 0 })
   const hasMoved = useRef(false)
@@ -85,7 +94,8 @@ export function BlobCanvas() {
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (e.button !== 0) return // Left mouse button only
     e.preventDefault()
-    
+    e.stopPropagation()
+
     dragStartPos.current = { x: e.clientX, y: e.clientY }
     hasMoved.current = false
   }, [])
@@ -104,15 +114,53 @@ export function BlobCanvas() {
     }
   }, [setIsDragging])
 
-  const handleMouseUp = useCallback(() => {
-    // If not moved significantly, treat as click
-    if (!hasMoved.current) {
-      setTextboxOpen(!textboxOpen)
+  const triggerStubReply = useCallback(async () => {
+    // Show a visible assistant bubble in the chat history (also visible in
+    // the floating textbox for now).
+    const msgId = addMessage({
+      text: STUB_REPLY,
+      role: 'assistant',
+      status: 'thinking',
+    })
+    setProcessing(true)
+    setTextboxOpen(true)
+
+    // Fire the TTS pipeline via the existing send_tts command. The Rust
+    // sidecar streams PCM audio chunks back to the frontend automatically.
+    try {
+      const requestId = `tts_${Date.now()}`
+      await sendTts(requestId, STUB_REPLY, speakerId, quantization)
+      updateMessage(msgId, { status: 'done' })
+    } catch (e) {
+      console.warn('[blob] stub TTS failed:', e)
+      updateMessage(msgId, { text: `${STUB_REPLY}\n\n(TTS unavailable: ${(e as Error).message})`, status: 'done' })
+    } finally {
+      setProcessing(false)
     }
-    setIsDragging(false)
-    hasMoved.current = false
-    dragStartPos.current = { x: 0, y: 0 }
-  }, [textboxOpen, setTextboxOpen, setIsDragging])
+  }, [addMessage, setProcessing, setTextboxOpen, updateMessage, speakerId, quantization])
+
+  const handleMouseUp = useCallback(
+    (e?: React.MouseEvent<HTMLCanvasElement>) => {
+      // If not moved significantly, treat as click
+      if (!hasMoved.current) {
+        // Stop the event from bubbling to the window-level click-outside
+        // handler in ChatTextbox, which would otherwise immediately close
+        // the textbox we are about to open.
+        e?.stopPropagation()
+        e?.preventDefault()
+        const wasOpen = textboxOpen
+        setTextboxOpen(true)
+        if (!wasOpen) {
+          // First open → show the demo answer + speak it
+          void triggerStubReply()
+        }
+      }
+      setIsDragging(false)
+      hasMoved.current = false
+      dragStartPos.current = { x: 0, y: 0 }
+    },
+    [textboxOpen, setTextboxOpen, setIsDragging, triggerStubReply]
+  )
 
   return (
     <canvas
@@ -128,7 +176,7 @@ export function BlobCanvas() {
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
+      onClick={(e) => e.stopPropagation()}
     />
   )
 }

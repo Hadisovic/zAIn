@@ -13,6 +13,42 @@ function App() {
     setWindowGeometry(0, 0, 140, 140).catch(() => {})
   }, [])
 
+  // Auto-resize window when textbox opens/closes
+  useEffect(() => {
+    const textboxOpen = useConfigStore.getState().textboxOpen
+    if (textboxOpen) {
+      // Expand window for textbox
+      setWindowGeometry(0, 0, 400, 300).catch(() => {})
+    } else {
+      const expanded = useConfigStore.getState().expanded
+      if (!expanded) {
+        // Collapse back to blob only
+        setWindowGeometry(0, 0, 140, 140).catch(() => {})
+      }
+    }
+  }, [])
+
+  // Subscribe to textboxOpen changes
+  useEffect(() => {
+    const unsubscribe = useConfigStore.subscribe(
+      (state) => state.textboxOpen,
+      (textboxOpen) => {
+        if (textboxOpen) {
+          // Expand window for textbox
+          setWindowGeometry(0, 0, 400, 300).catch(() => {})
+        } else {
+          const expanded = useConfigStore.getState().expanded
+          if (!expanded) {
+            // Collapse back to blob only
+            setWindowGeometry(0, 0, 140, 140).catch(() => {})
+          }
+        }
+      }
+    )
+    return unsubscribe
+  }, [])
+
+  // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ctrl+Space: toggle full chat history panel
@@ -81,7 +117,7 @@ function App() {
       const msgId = useChatStore.getState().getMessageIdForRequest(request_id)
       if (msgId) {
         useChatStore.getState().updateMessage(msgId, { status: 'done' })
-        useChatStore.getState().setProcessing(false)
+        // Keep processing true until TTS completes (audio:done will set it to false)
       }
     }).then((unlisten) => unlisteners.push(unlisten))
 
@@ -92,15 +128,17 @@ function App() {
           text: `Error: ${message}`,
           status: 'done',
         })
-        useChatStore.getState().setProcessing(false)
       }
+      useChatStore.getState().setProcessing(false)
     }).then((unlisten) => unlisteners.push(unlisten))
 
     onAudioChunk(({ pcm_base64 }) => {
+      useChatStore.getState().setPlayingAudio(true)
       audioPlayer.enqueueChunk(pcm_base64)
     }).then((unlisten) => unlisteners.push(unlisten))
 
     onAudioDone(() => {
+      useChatStore.getState().setPlayingAudio(false)
       // Audio playback continues from queue; no action needed
     }).then((unlisten) => unlisteners.push(unlisten))
 
