@@ -9,102 +9,95 @@ const CHAT_W = 360
 const CHAT_H_COLLAPSED = 56
 const CHAT_H_EXPANDED = 250
 
-// ── Fractal anatomy ──────────────────────────────────────────────────────
-const FRACTAL_POINTS = 180
-const BASE_RADIUS = 28
-const OCTAVES = 5
-const DETAIL_RINGS = 3
+// ── Jellyfish anatomy ────────────────────────────────────────────────────
+const BELL_SEGS = 80
+const BELL_W = 32
+const BELL_H = 24
+const BELL_BASE_Y = 44
+const TENT_COUNT = 6
+const TENT_SEGS = 10
+const TENT_LEN = 28
+const ORGAN_COUNT = 5
 
-// ── Simplex-like noise (fast approximation) ─────────────────────────────
-function noise2D(x: number, y: number): number {
-  const n = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453
-  return n - Math.floor(n)
+// ── Tentacle ─────────────────────────────────────────────────────────────
+interface TPoint { x: number; y: number; vx: number; vy: number }
+interface Tentacle {
+  pts: TPoint[]
+  sx: number
+  phase: number
+  speed: number
+  amp: number
+  damp: number
+  width: number
 }
 
-function fbm(x: number, y: number, octaves: number): number {
-  let value = 0
-  let amplitude = 1
-  let frequency = 1
-  let maxValue = 0
-  for (let i = 0; i < octaves; i++) {
-    value += amplitude * (noise2D(x * frequency, y * frequency) * 2 - 1)
-    maxValue += amplitude
-    amplitude *= 0.5
-    frequency *= 2.1
-  }
-  return value / maxValue
-}
-
-// ── Fractal surface ──────────────────────────────────────────────────────
-interface FractalPoint {
-  angle: number
-  baseR: number
-  r: number
-  detailR: number
-}
-
-function makeFractalSurface(): FractalPoint[] {
-  return Array.from({ length: FRACTAL_POINTS }, (_, i) => {
-    const angle = (i / FRACTAL_POINTS) * Math.PI * 2
-    return { angle, baseR: BASE_RADIUS, r: BASE_RADIUS, detailR: BASE_RADIUS }
+function makeTentacles(): Tentacle[] {
+  return Array.from({ length: TENT_COUNT }, (_, i) => {
+    const spread = 28
+    const sx = -spread / 2 + (i / (TENT_COUNT - 1)) * spread
+    const pts: TPoint[] = Array.from({ length: TENT_SEGS }, (_, j) => ({
+      x: sx,
+      y: BELL_BASE_Y + (j / TENT_SEGS) * TENT_LEN,
+      vx: 0,
+      vy: 0,
+    }))
+    return {
+      pts, sx,
+      phase: i * 1.3 + Math.random() * 0.5,
+      speed: 0.5 + Math.random() * 0.4,
+      amp: 3.0 + Math.random() * 2.5,
+      damp: 0.90 + Math.random() * 0.05,
+      width: 1.8 + Math.random() * 1.2,
+    }
   })
 }
 
-function updateFractal(pts: FractalPoint[], t: number, isProcessing: boolean) {
-  const timeScale = isProcessing ? 1.5 : 1.0
-  const chaosMult = isProcessing ? 1.6 : 1.0
-
-  for (const p of pts) {
-    // Large-scale morphing (3 harmonics)
-    const largeMorph =
-      Math.sin(p.angle * 2 + t * 0.4) * 3.0 +
-      Math.cos(p.angle * 3 - t * 0.3) * 2.0 +
-      Math.sin(p.angle * 5 + t * 0.6) * 1.2
-
-    // Fractal detail — fbm at the angle + time
-    const nx = Math.cos(p.angle) * 3 + t * 0.2 * timeScale
-    const ny = Math.sin(p.angle) * 3 + t * 0.15 * timeScale
-    const fractalDetail = fbm(nx, ny, OCTAVES) * 8 * chaosMult
-
-    // Fine noise — high frequency micro-detail
-    const micro = Math.sin(p.angle * 23 + t * 2.5) * 0.4
-
-    p.baseR = BASE_RADIUS + largeMorph
-    p.r = p.baseR + fractalDetail + micro
-
-    // Secondary detail ring (inner structure visible through translucency)
-    const dnx = Math.cos(p.angle + t * 0.1) * 2
-    const dny = Math.sin(p.angle + t * 0.08) * 2
-    p.detailR = BASE_RADIUS * 0.65 + fbm(dnx, dny, 3) * 5
-  }
+// ── Bioluminescent organs ────────────────────────────────────────────────
+interface Organ {
+  bx: number; by: number
+  size: number; bright: number
+  phase: number; speed: number
 }
 
-function traceFractalPath(
+function makeOrgans(): Organ[] {
+  return [
+    { bx: -8, by: -5, size: 4.5, bright: 1, phase: 0, speed: 1.1 },
+    { bx: 6, by: -3, size: 3.5, bright: 0.8, phase: 1.8, speed: 0.9 },
+    { bx: -2, by: 2, size: 3.0, bright: 0.7, phase: 3.2, speed: 1.0 },
+    { bx: 10, by: -1, size: 2.2, bright: 0.55, phase: 4.5, speed: 0.8 },
+    { bx: -11, by: 0, size: 2.0, bright: 0.45, phase: 2.5, speed: 1.2 },
+  ]
+}
+
+// ── Bell path ────────────────────────────────────────────────────────────
+function traceBell(
   ctx: CanvasRenderingContext2D,
-  pts: FractalPoint[],
   cx: number,
   cy: number,
-  radiusMul: number = 1,
+  sx: number,
+  sy: number,
+  time: number,
 ) {
   ctx.beginPath()
-  for (let i = 0; i <= pts.length; i++) {
-    const curr = pts[i % pts.length]
-    const next = pts[(i + 1) % pts.length]
-    const prev = pts[(i - 1 + pts.length) % pts.length]
-    const r = curr.r * radiusMul
-    const x = cx + Math.cos(curr.angle) * r
-    const y = cy + Math.sin(curr.angle) * r
-    if (i === 0) {
-      ctx.moveTo(x, y)
+  for (let i = 0; i <= BELL_SEGS; i++) {
+    const a = (i / BELL_SEGS) * Math.PI * 2
+    const ca = Math.cos(a)
+    const sa = Math.sin(a)
+    let bx: number, by: number
+
+    if (sa <= 0) {
+      const wobble = Math.sin(a * 3 + time * 0.5) * 0.6
+      bx = cx + ca * (BELL_W + wobble) * sx
+      by = cy + sa * BELL_H * sy
     } else {
-      const pr = prev.r * radiusMul
-      const nr = next.r * radiusMul
-      const cpx1 = x + (Math.cos(curr.angle) - Math.cos(prev.angle)) * r * 0.18
-      const cpy1 = y + (Math.sin(curr.angle) - Math.sin(prev.angle)) * r * 0.18
-      const cpx2 = x - (Math.cos(next.angle) - Math.cos(curr.angle)) * r * 0.18
-      const cpy2 = y - (Math.sin(next.angle) - Math.sin(curr.angle)) * r * 0.18
-      ctx.bezierCurveTo(cpx1, cpy1, cpx2, cpy2, x, y)
+      const rimTuck = 1 - Math.pow(ca, 2) * 0.1
+      const rimFlare = Math.pow(Math.abs(ca), 0.5) * 3
+      bx = cx + ca * BELL_W * rimTuck * sx
+      by = cy + sa * BELL_H * sy + rimFlare
     }
+
+    if (i === 0) ctx.moveTo(bx, by)
+    else ctx.lineTo(bx, by)
   }
   ctx.closePath()
 }
@@ -125,6 +118,13 @@ export function BlobCanvas() {
   const startWindowRef = useRef<{ x: number; y: number } | null>(null)
   const screenSizeRef = useRef<{ width: number; height: number } | null>(null)
 
+  // Eye state
+  const eyeTargetRef = useRef({ x: 0, y: 0 })
+  const eyePosRef = useRef({ x: 0, y: 0 })
+  const blinkTimerRef = useRef(0)
+  const isBlinkingRef = useRef(false)
+  const blinkPhaseRef = useRef(0)
+
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -137,218 +137,312 @@ export function BlobCanvas() {
     const cx = w / 2
     const cy = h / 2
 
-    const fractal = makeFractalSurface()
+    const tents = makeTentacles()
+    const organs = makeOrgans()
+
+    // Track mouse for eye direction
+    const onMouseMove = (e: MouseEvent) => {
+      const rect = canvas.getBoundingClientRect()
+      const mx = e.clientX - rect.left - cx
+      const my = e.clientY - rect.top - cy
+      const dist = Math.sqrt(mx * mx + my * my)
+      const maxShift = 3.5
+      if (dist > 0) {
+        eyeTargetRef.current = {
+          x: (mx / dist) * Math.min(maxShift, dist * 0.05),
+          y: (my / dist) * Math.min(maxShift, dist * 0.05),
+        }
+      }
+    }
+    window.addEventListener('mousemove', onMouseMove)
 
     const draw = (time: number) => {
       ctx.clearRect(0, 0, w, h)
       const t = time / 1000
       const hue = isProcessing ? 270 : isDragging ? 200 : (t * BLOB.HUE_SPEED) % 360
-      const pm = isProcessing ? 1.4 : 1.0
 
       // ── Pulse ─────────────────────────────────────────────────────
       const pp = t * (Math.PI * 2 / (BLOB.BREATH_PERIOD_MS / 1000))
       const pulse = Math.sin(pp)
-      const pI = (pulse + 1) * 0.5
+      const sx = 1 + pulse * 0.06
+      const sy = 1 - pulse * 0.08
+      const pm = isProcessing ? 2.0 : 1.0
 
-      // ── Update fractal ────────────────────────────────────────────
-      updateFractal(fractal, t, isProcessing)
+      // ── Eye tracking ──────────────────────────────────────────────
+      const ep = eyePosRef.current
+      const et = eyeTargetRef.current
+      ep.x += (et.x - ep.x) * 0.08
+      ep.y += (et.y - ep.y) * 0.08
+
+      // Blink timer
+      blinkTimerRef.current += 1 / 60
+      if (!isBlinkingRef.current && blinkTimerRef.current > 2.5 + Math.random() * 3) {
+        isBlinkingRef.current = true
+        blinkPhaseRef.current = 0
+        blinkTimerRef.current = 0
+      }
+      if (isBlinkingRef.current) {
+        blinkPhaseRef.current += 1 / 60
+        if (blinkPhaseRef.current > 0.2) {
+          isBlinkingRef.current = false
+          blinkPhaseRef.current = 0
+        }
+      }
+      const blinkAmount = isBlinkingRef.current
+        ? Math.sin((blinkPhaseRef.current / 0.2) * Math.PI)
+        : 0
+
+      // Eye squint (processing = focused, idle = relaxed)
+      const squint = isProcessing ? 0.15 : 0
+
+      // ── Tentacle physics ──────────────────────────────────────────
+      for (const ten of tents) {
+        const ax = cx + ten.sx * sx
+        const ay = cy + BELL_BASE_Y * sy
+        ten.pts[0].x = ax
+        ten.pts[0].y = ay
+
+        for (let i = 1; i < ten.pts.length; i++) {
+          const p = ten.pts[i]
+          const f = i / TENT_SEGS
+          const wave = Math.sin(t * ten.speed * pm + ten.phase + f * 2.8) * ten.amp * f
+          const tx = ax + wave
+          const ty = ay + f * TENT_LEN
+          p.vx += (tx - p.x) * 0.04
+          p.vy += (ty - p.y) * 0.04
+          p.vx *= ten.damp
+          p.vy *= ten.damp
+          p.x += p.vx
+          p.y += p.vy
+        }
+      }
+
+      // ── Organ positions ───────────────────────────────────────────
+      const organPos = organs.map((o) => ({
+        x: cx + o.bx * sx + Math.sin(t * o.speed * 0.4 + o.phase) * 1.2,
+        y: cy + o.by * sy + Math.cos(t * o.speed * 0.3 + o.phase) * 0.8,
+      }))
 
       // ══════════════════════════════════════════════════════════════
-      // LAYER 1 — Outer fractal halo (distant echo)
+      // LAYER 1 — Ambient glow
       // ══════════════════════════════════════════════════════════════
-      const haloG = ctx.createRadialGradient(cx, cy, BASE_RADIUS * 0.8, cx, cy, BASE_RADIUS + 22)
-      haloG.addColorStop(0, `hsla(${hue}, 60%, 60%, 0.08)`)
-      haloG.addColorStop(0.5, `hsla(${hue}, 50%, 50%, 0.03)`)
-      haloG.addColorStop(1, `hsla(${hue}, 40%, 40%, 0)`)
+      const glowR = 52
+      const gG = ctx.createRadialGradient(cx, cy, 8, cx, cy, glowR)
+      gG.addColorStop(0, `hsla(${hue}, 68%, 60%, 0.16)`)
+      gG.addColorStop(0.35, `hsla(${hue}, 62%, 52%, 0.07)`)
+      gG.addColorStop(0.65, `hsla(${hue}, 55%, 44%, 0.02)`)
+      gG.addColorStop(1, `hsla(${hue}, 48%, 35%, 0)`)
       ctx.beginPath()
-      ctx.arc(cx, cy, BASE_RADIUS + 22, 0, Math.PI * 2)
-      ctx.fillStyle = haloG
+      ctx.arc(cx, cy, glowR, 0, Math.PI * 2)
+      ctx.fillStyle = gG
       ctx.fill()
 
       // ══════════════════════════════════════════════════════════════
-      // LAYER 2 — Fractal detail rings (visible internal structure)
+      // LAYER 2 — Tentacles (tapering, flowing)
       // ══════════════════════════════════════════════════════════════
-      for (let ring = DETAIL_RINGS; ring >= 1; ring--) {
-        const ringFrac = ring / DETAIL_RINGS
-        const ringR = BASE_RADIUS * (0.35 + ringFrac * 0.35)
-        const ringAlpha = 0.04 * (1 - ringFrac * 0.5) * pm
+      for (const ten of tents) {
+        for (let i = 0; i < ten.pts.length - 1; i++) {
+          const f0 = i / (ten.pts.length - 1)
+          const f1 = (i + 1) / (ten.pts.length - 1)
+          const w0 = ten.width * (1 - f0 * 0.8)
+          const w1 = ten.width * (1 - f1 * 0.8)
+          const a0 = 0.35 * (1 - f0 * 0.75)
+          const a1 = 0.35 * (1 - f1 * 0.75)
 
-        ctx.beginPath()
-        for (let i = 0; i <= 96; i++) {
-          const a = (i / 96) * Math.PI * 2
-          const nx = Math.cos(a + t * 0.1 * ring) * 2
-          const ny = Math.sin(a + t * 0.08 * ring) * 2
-          const detail = fbm(nx, ny, 3) * 4
-          const r = ringR + detail
-          const x = cx + Math.cos(a) * r
-          const y = cy + Math.sin(a) * r
-          if (i === 0) ctx.moveTo(x, y)
-          else ctx.lineTo(x, y)
+          ctx.beginPath()
+          ctx.moveTo(ten.pts[i].x, ten.pts[i].y)
+          ctx.lineTo(ten.pts[i + 1].x, ten.pts[i + 1].y)
+
+          const segG = ctx.createLinearGradient(
+            ten.pts[i].x, ten.pts[i].y,
+            ten.pts[i + 1].x, ten.pts[i + 1].y,
+          )
+          segG.addColorStop(0, `hsla(${hue}, 58%, 58%, ${a0})`)
+          segG.addColorStop(1, `hsla(${hue + 10}, 52%, 48%, ${a1})`)
+          ctx.strokeStyle = segG
+          ctx.lineWidth = w0
+          ctx.lineCap = 'round'
+          ctx.stroke()
         }
-        ctx.closePath()
-        ctx.strokeStyle = `hsla(${hue + ring * 8}, 55%, 65%, ${ringAlpha})`
-        ctx.lineWidth = 0.5
-        ctx.stroke()
       }
 
       // ══════════════════════════════════════════════════════════════
-      // LAYER 3 — Fractal body fill
+      // LAYER 3 — Bell body (translucent dome)
       // ══════════════════════════════════════════════════════════════
-      traceFractalPath(ctx, fractal, cx, cy)
-
-      // Layered gradient for depth
-      const bodyG = ctx.createRadialGradient(cx, cy, 0, cx, cy, BASE_RADIUS + 10)
-      bodyG.addColorStop(0, `hsla(${hue + 15}, 50%, 72%, 0.55)`)
-      bodyG.addColorStop(0.25, `hsla(${hue + 8}, 55%, 60%, 0.50)`)
-      bodyG.addColorStop(0.5, `hsla(${hue}, 60%, 50%, 0.55)`)
-      bodyG.addColorStop(0.75, `hsla(${hue - 8}, 65%, 42%, 0.60)`)
-      bodyG.addColorStop(1, `hsla(${hue - 15}, 70%, 35%, 0.65)`)
-      ctx.fillStyle = bodyG
+      traceBell(ctx, cx, cy, sx, sy, t)
+      const bG = ctx.createRadialGradient(cx, cy - 2, 0, cx, cy + 2, BELL_H + 6)
+      bG.addColorStop(0, `hsla(${hue}, 58%, 66%, 0.16)`)
+      bG.addColorStop(0.25, `hsla(${hue}, 62%, 56%, 0.26)`)
+      bG.addColorStop(0.55, `hsla(${hue}, 56%, 46%, 0.34)`)
+      bG.addColorStop(0.8, `hsla(${hue}, 50%, 38%, 0.40)`)
+      bG.addColorStop(1, `hsla(${hue}, 44%, 28%, 0.46)`)
+      ctx.fillStyle = bG
       ctx.fill()
 
       // ══════════════════════════════════════════════════════════════
-      // LAYER 4 — Inner glow (smooth core, contrasting with fractal edge)
+      // LAYER 4 — Inner glow + organs (clipped to bell)
       // ══════════════════════════════════════════════════════════════
       ctx.save()
-      traceFractalPath(ctx, fractal, cx, cy)
+      traceBell(ctx, cx, cy, sx, sy, t)
       ctx.clip()
 
-      const coreG = ctx.createRadialGradient(cx, cy, 0, cx, cy, BASE_RADIUS * 0.7)
-      coreG.addColorStop(0, `hsla(${hue + 25}, 45%, 85%, ${0.25 + pI * 0.12})`)
-      coreG.addColorStop(0.4, `hsla(${hue + 15}, 55%, 72%, ${0.12 + pI * 0.06})`)
-      coreG.addColorStop(0.7, `hsla(${hue + 5}, 60%, 60%, ${0.04})`)
-      coreG.addColorStop(1, `hsla(${hue}, 65%, 50%, 0)`)
-      ctx.fillStyle = coreG
+      // Inner radial glow
+      const iG = ctx.createRadialGradient(cx, cy - 2, 0, cx, cy, BELL_H * 0.8)
+      iG.addColorStop(0, `hsla(${hue}, 68%, 75%, ${0.12 + (pulse + 1) * 0.04})`)
+      iG.addColorStop(0.5, `hsla(${hue}, 58%, 60%, ${0.05})`)
+      iG.addColorStop(1, `hsla(${hue}, 48%, 45%, 0)`)
+      ctx.fillStyle = iG
       ctx.fillRect(0, 0, w, h)
 
-      // ══════════════════════════════════════════════════════════════
-      // LAYER 5 — Mandelbrot-inspired spiral detail (inside the core)
-      // ══════════════════════════════════════════════════════════════
-      const spiralCount = isProcessing ? 5 : 3
-      for (let s = 0; s < spiralCount; s++) {
-        const sa = t * (0.15 + s * 0.08) + s * 2.4
+      // Organs with halos
+      for (let i = 0; i < organs.length; i++) {
+        const o = organs[i]
+        const pos = organPos[i]
+        const op = Math.sin(t * o.speed + o.phase) * 0.3 + 0.7
+        const ob = o.bright * op * (isProcessing ? 1.5 : 1.0)
+
+        // Halo
+        const ohG = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, o.size * 2.5)
+        ohG.addColorStop(0, `hsla(${hue + 30}, 68%, 72%, ${0.10 * ob})`)
+        ohG.addColorStop(0.5, `hsla(${hue + 20}, 58%, 58%, ${0.03 * ob})`)
+        ohG.addColorStop(1, `hsla(${hue + 10}, 48%, 45%, 0)`)
         ctx.beginPath()
-        for (let i = 0; i <= 80; i++) {
-          const f = i / 80
-          const a = sa + f * Math.PI * 4
-          const r = f * BASE_RADIUS * 0.6
-          const wobble = Math.sin(f * 12 + t * 1.5) * 0.5
-          const x = cx + Math.cos(a) * (r + wobble)
-          const y = cy + Math.sin(a) * (r + wobble)
-          if (i === 0) ctx.moveTo(x, y)
-          else ctx.lineTo(x, y)
-        }
-        ctx.strokeStyle = `hsla(${hue + 10 + s * 5}, 55%, 70%, ${0.06 * pm})`
-        ctx.lineWidth = 0.6
-        ctx.stroke()
+        ctx.arc(pos.x, pos.y, o.size * 2.5, 0, Math.PI * 2)
+        ctx.fillStyle = ohG
+        ctx.fill()
+
+        // Core
+        const oG = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, o.size)
+        oG.addColorStop(0, `hsla(${hue + 25}, 75%, 80%, ${0.35 * ob})`)
+        oG.addColorStop(0.5, `hsla(${hue + 15}, 65%, 65%, ${0.15 * ob})`)
+        oG.addColorStop(1, `hsla(${hue + 5}, 55%, 50%, 0)`)
+        ctx.beginPath()
+        ctx.arc(pos.x, pos.y, o.size, 0, Math.PI * 2)
+        ctx.fillStyle = oG
+        ctx.fill()
       }
 
       ctx.restore()
 
       // ══════════════════════════════════════════════════════════════
-      // LAYER 6 — Fractal boundary (the signature element)
+      // LAYER 5 — Bell membrane (edge stroke)
       // ══════════════════════════════════════════════════════════════
-      // Outer boundary — sharp
-      traceFractalPath(ctx, fractal, cx, cy)
-      ctx.strokeStyle = `hsla(${hue}, 50%, 65%, 0.18)`
-      ctx.lineWidth = 0.8
-      ctx.stroke()
-
-      // Middle boundary — glow
-      traceFractalPath(ctx, fractal, cx, cy)
-      ctx.strokeStyle = `hsla(${hue + 5}, 55%, 60%, 0.08)`
-      ctx.lineWidth = 2.5
-      ctx.stroke()
-
-      // Inner boundary — wide glow
-      traceFractalPath(ctx, fractal, cx, cy)
-      ctx.strokeStyle = `hsla(${hue + 10}, 60%, 55%, 0.03)`
-      ctx.lineWidth = 5
+      traceBell(ctx, cx, cy, sx, sy, t)
+      const mG = ctx.createLinearGradient(cx - BELL_W, cy - BELL_H, cx + BELL_W, cy + BELL_H * 0.5)
+      mG.addColorStop(0, `hsla(${hue}, 60%, 62%, 0.18)`)
+      mG.addColorStop(0.5, `hsla(${hue}, 55%, 52%, 0.12)`)
+      mG.addColorStop(1, `hsla(${hue}, 50%, 48%, 0.06)`)
+      ctx.strokeStyle = mG
+      ctx.lineWidth = 1.2
       ctx.stroke()
 
       // ══════════════════════════════════════════════════════════════
-      // LAYER 7 — Fractal tendrils (protrusions that reach outward)
+      // LAYER 6 — EYES (the character)
       // ══════════════════════════════════════════════════════════════
-      const tendrilCount = isProcessing ? 8 : 5
-      for (let i = 0; i < tendrilCount; i++) {
-        const ta = (i / tendrilCount) * Math.PI * 2 + t * 0.05
-        const pt = fractal[Math.floor((ta / (Math.PI * 2)) * FRACTAL_POINTS) % FRACTAL_POINTS]
-        if (!pt) continue
+      const eyeSpacing = 9
+      const eyeY = cy - 2
+      const eyeRadius = 5.5
+      const pupilRadius = 2.8
+      const irisRadius = 3.8
 
-        const baseR = pt.r
-        const tendrilLen = 6 + Math.sin(t * 1.5 + i * 1.7) * 3
-        const tendrilAngle = ta + Math.sin(t * 0.8 + i * 2.3) * 0.3
+      for (let side = -1; side <= 1; side += 2) {
+        const ex = cx + side * eyeSpacing * sx
+        const ey = eyeY
 
-        const tx = cx + Math.cos(tendrilAngle) * (baseR + tendrilLen)
-        const ty = cy + Math.sin(tendrilAngle) * (baseR + tendrilLen)
-
-        const tG = ctx.createLinearGradient(
-          cx + Math.cos(tendrilAngle) * baseR,
-          cy + Math.sin(tendrilAngle) * baseR,
-          tx, ty,
-        )
-        tG.addColorStop(0, `hsla(${hue}, 55%, 60%, 0.12)`)
-        tG.addColorStop(0.5, `hsla(${hue + 5}, 50%, 55%, 0.06)`)
-        tG.addColorStop(1, `hsla(${hue + 10}, 45%, 50%, 0)`)
-
+        // Eye white (slightly translucent)
+        const eyeG = ctx.createRadialGradient(ex, ey, 0, ex, ey, eyeRadius)
+        eyeG.addColorStop(0, `hsla(${hue + 20}, 15%, 95%, 0.85)`)
+        eyeG.addColorStop(0.7, `hsla(${hue + 10}, 20%, 90%, 0.80)`)
+        eyeG.addColorStop(1, `hsla(${hue}, 25%, 82%, 0.70)`)
         ctx.beginPath()
-        ctx.moveTo(
-          cx + Math.cos(tendrilAngle) * baseR,
-          cy + Math.sin(tendrilAngle) * baseR,
-        )
-        ctx.lineTo(tx, ty)
-        ctx.strokeStyle = tG
-        ctx.lineWidth = 1.5
-        ctx.lineCap = 'round'
+        ctx.ellipse(ex, ey, eyeRadius, eyeRadius * (1 - squint) * (1 - blinkAmount), 0, 0, Math.PI * 2)
+        ctx.fillStyle = eyeG
+        ctx.fill()
+
+        // Eye rim
+        ctx.beginPath()
+        ctx.ellipse(ex, ey, eyeRadius, eyeRadius * (1 - squint) * (1 - blinkAmount), 0, 0, Math.PI * 2)
+        ctx.strokeStyle = `hsla(${hue}, 40%, 40%, 0.25)`
+        ctx.lineWidth = 0.6
         ctx.stroke()
+
+        // Iris (colored, tracks movement)
+        const irisX = ex + ep.x
+        const irisY = ey + ep.y
+        const iG = ctx.createRadialGradient(irisX, irisY, 0, irisX, irisY, irisRadius)
+        iG.addColorStop(0, `hsla(${hue + 40}, 50%, 40%, 0.9)`)
+        iG.addColorStop(0.5, `hsla(${hue + 20}, 55%, 32%, 0.92)`)
+        iG.addColorStop(1, `hsla(${hue}, 60%, 22%, 0.95)`)
+        ctx.beginPath()
+        ctx.arc(irisX, irisY, irisRadius * (1 - blinkAmount * 0.8), 0, Math.PI * 2)
+        ctx.fillStyle = iG
+        ctx.fill()
+
+        // Pupil (dark center)
+        ctx.beginPath()
+        ctx.arc(irisX, irisY, pupilRadius * (1 - blinkAmount * 0.7), 0, Math.PI * 2)
+        ctx.fillStyle = `hsla(${hue}, 30%, 8%, 0.95)`
+        ctx.fill()
+
+        // Pupil dilation (processing = smaller, idle = larger)
+        const pupilDilated = isProcessing ? 0.7 : 1.0
+        ctx.beginPath()
+        ctx.arc(irisX, irisY, pupilRadius * pupilDilated * (1 - blinkAmount * 0.7), 0, Math.PI * 2)
+        ctx.fillStyle = `hsla(0, 0%, 5%, 0.98)`
+        ctx.fill()
+
+        // Specular highlight (top-right of eye)
+        const shX = ex + 2 + ep.x * 0.3
+        const shY = ey - 2 + ep.y * 0.3
+        const shG = ctx.createRadialGradient(shX, shY, 0, shX, shY, 2.2)
+        shG.addColorStop(0, `hsla(0, 0%, 100%, ${0.75 * (1 - blinkAmount)})`)
+        shG.addColorStop(0.5, `hsla(0, 0%, 100%, ${0.30 * (1 - blinkAmount)})`)
+        shG.addColorStop(1, `hsla(0, 0%, 100%, 0)`)
+        ctx.beginPath()
+        ctx.arc(shX, shY, 2.2, 0, Math.PI * 2)
+        ctx.fillStyle = shG
+        ctx.fill()
+
+        // Secondary specular (smaller, bottom-left)
+        const sh2X = ex - 1.5 + ep.x * 0.2
+        const sh2Y = ey + 1.5 + ep.y * 0.2
+        ctx.beginPath()
+        ctx.arc(sh2X, sh2Y, 1.0, 0, Math.PI * 2)
+        ctx.fillStyle = `hsla(0, 0%, 100%, ${0.30 * (1 - blinkAmount)})`
+        ctx.fill()
       }
 
       // ══════════════════════════════════════════════════════════════
-      // LAYER 8 — Specular highlight
+      // LAYER 7 — Specular highlight on bell
       // ══════════════════════════════════════════════════════════════
-      const spX = cx - 6
-      const spY = cy - BASE_RADIUS * 0.35
-      const spG = ctx.createRadialGradient(spX, spY, 0, spX, spY, 7)
-      spG.addColorStop(0, `hsla(${hue + 30}, 30%, 96%, 0.55)`)
-      spG.addColorStop(0.35, `hsla(${hue + 20}, 40%, 90%, 0.22)`)
-      spG.addColorStop(0.7, `hsla(${hue + 10}, 50%, 82%, 0.04)`)
-      spG.addColorStop(1, `hsla(${hue}, 60%, 75%, 0)`)
+      const spX = cx - 8
+      const spY = cy - BELL_H * 0.55
+      const spG = ctx.createRadialGradient(spX, spY, 0, spX, spY, 8)
+      spG.addColorStop(0, `hsla(${hue}, 30%, 95%, 0.40)`)
+      spG.addColorStop(0.4, `hsla(${hue}, 40%, 88%, 0.15)`)
+      spG.addColorStop(1, `hsla(${hue}, 50%, 80%, 0)`)
       ctx.beginPath()
-      ctx.ellipse(spX, spY, 7, 4, -0.3, 0, Math.PI * 2)
+      ctx.ellipse(spX, spY, 8, 4, -0.2, 0, Math.PI * 2)
       ctx.fillStyle = spG
       ctx.fill()
 
       // ══════════════════════════════════════════════════════════════
-      // LAYER 9 — Processing (fractal acceleration)
+      // LAYER 8 — Processing rings
       // ══════════════════════════════════════════════════════════════
       if (isProcessing) {
         const pp2 = Math.sin(t * 4) * 0.3 + 0.7
 
-        // Energy rings
-        for (let r = 0; r < 2; r++) {
-          const ringPhase = (t * 2.2 + r * 1.0) % 2.5
-          const ringAlpha = ringPhase < 1.2 ? ringPhase / 1.2 : (2.5 - ringPhase) / 1.3
-          const ringR = BASE_RADIUS + 4 + ringPhase * 12
+        ctx.beginPath()
+        ctx.arc(cx, cy - 2, BELL_W + 4, 0, Math.PI * 2)
+        ctx.strokeStyle = `hsla(${hue}, 72%, 65%, ${0.12 * pp2})`
+        ctx.lineWidth = 1.5
+        ctx.stroke()
 
-          ctx.beginPath()
-          ctx.arc(cx, cy, ringR, 0, Math.PI * 2)
-          ctx.strokeStyle = `hsla(${hue + 10}, 60%, 65%, ${0.08 * ringAlpha * pp2})`
-          ctx.lineWidth = 1
-          ctx.stroke()
-        }
-
-        // Fractal burst (many small protrusions)
-        for (let b = 0; b < 12; b++) {
-          const ba = (b / 12) * Math.PI * 2 + t * 0.3
-          const br = BASE_RADIUS + 5 + Math.sin(t * 3 + b * 1.3) * 4
-          const bx = cx + Math.cos(ba) * br
-          const by = cy + Math.sin(ba) * br
-
-          ctx.beginPath()
-          ctx.arc(bx, by, 1.2, 0, Math.PI * 2)
-          ctx.fillStyle = `hsla(${hue + 15}, 60%, 72%, ${0.15 * pp2})`
-          ctx.fill()
-        }
+        ctx.beginPath()
+        ctx.arc(cx, cy - 2, BELL_W + 8, 0, Math.PI * 2)
+        ctx.strokeStyle = `hsla(${hue}, 62%, 55%, ${0.05 * pp2})`
+        ctx.lineWidth = 1
+        ctx.stroke()
       }
 
       // ── Hue sync ──────────────────────────────────────────────────
@@ -358,7 +452,10 @@ export function BlobCanvas() {
     }
 
     raf = requestAnimationFrame(draw)
-    return () => cancelAnimationFrame(raf)
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('mousemove', onMouseMove)
+    }
   }, [isProcessing, isDragging])
 
   // ── Interaction ──────────────────────────────────────────────────────
