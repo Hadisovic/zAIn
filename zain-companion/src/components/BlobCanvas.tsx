@@ -9,125 +9,104 @@ const CHAT_W = 360
 const CHAT_H_COLLAPSED = 56
 const CHAT_H_EXPANDED = 250
 
-// ── Ink anatomy ──────────────────────────────────────────────────────────
-const BLOB_POINTS = 64
-const BASE_RADIUS = 30
-const BLEED_LAYERS = 6
-const DRIP_COUNT = 5
-const BRUSH_COUNT = 4
-const BRUSH_SEGS = 10
+// ── Fractal anatomy ──────────────────────────────────────────────────────
+const FRACTAL_POINTS = 180
+const BASE_RADIUS = 28
+const OCTAVES = 5
+const DETAIL_RINGS = 3
 
-// ── Ink blob surface ─────────────────────────────────────────────────────
-interface SurfacePoint {
-  angle: number
-  r: number
-  vr: number
-  targetR: number
+// ── Simplex-like noise (fast approximation) ─────────────────────────────
+function noise2D(x: number, y: number): number {
+  const n = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453
+  return n - Math.floor(n)
 }
 
-function makeSurface(): SurfacePoint[] {
-  return Array.from({ length: BLOB_POINTS }, (_, i) => {
-    const angle = (i / BLOB_POINTS) * Math.PI * 2
-    return { angle, r: BASE_RADIUS, vr: 0, targetR: BASE_RADIUS }
+function fbm(x: number, y: number, octaves: number): number {
+  let value = 0
+  let amplitude = 1
+  let frequency = 1
+  let maxValue = 0
+  for (let i = 0; i < octaves; i++) {
+    value += amplitude * (noise2D(x * frequency, y * frequency) * 2 - 1)
+    maxValue += amplitude
+    amplitude *= 0.5
+    frequency *= 2.1
+  }
+  return value / maxValue
+}
+
+// ── Fractal surface ──────────────────────────────────────────────────────
+interface FractalPoint {
+  angle: number
+  baseR: number
+  r: number
+  detailR: number
+}
+
+function makeFractalSurface(): FractalPoint[] {
+  return Array.from({ length: FRACTAL_POINTS }, (_, i) => {
+    const angle = (i / FRACTAL_POINTS) * Math.PI * 2
+    return { angle, baseR: BASE_RADIUS, r: BASE_RADIUS, detailR: BASE_RADIUS }
   })
 }
 
-function updateSurface(pts: SurfacePoint[], t: number, isProcessing: boolean) {
-  const chaos = isProcessing ? 1.8 : 1.0
+function updateFractal(pts: FractalPoint[], t: number, isProcessing: boolean) {
+  const timeScale = isProcessing ? 1.5 : 1.0
+  const chaosMult = isProcessing ? 1.6 : 1.0
+
   for (const p of pts) {
-    const n1 = Math.sin(p.angle * 2 + t * 0.5) * 2.5
-    const n2 = Math.cos(p.angle * 3 - t * 0.4) * 1.8
-    const n3 = Math.sin(p.angle * 5 + t * 0.7) * 1.0
-    const n4 = Math.cos(p.angle * 7 - t * 0.6) * 0.5
-    // Organic bleeding tendrils at the edge
-    const bleed = Math.sin(p.angle * 11 + t * 1.2) * 1.5 * chaos
-    p.targetR = BASE_RADIUS + (n1 + n2 + n3 + n4 + bleed) * chaos
-    p.vr += (p.targetR - p.r) * 0.06
-    p.vr *= 0.85
-    p.r += p.vr
+    // Large-scale morphing (3 harmonics)
+    const largeMorph =
+      Math.sin(p.angle * 2 + t * 0.4) * 3.0 +
+      Math.cos(p.angle * 3 - t * 0.3) * 2.0 +
+      Math.sin(p.angle * 5 + t * 0.6) * 1.2
+
+    // Fractal detail — fbm at the angle + time
+    const nx = Math.cos(p.angle) * 3 + t * 0.2 * timeScale
+    const ny = Math.sin(p.angle) * 3 + t * 0.15 * timeScale
+    const fractalDetail = fbm(nx, ny, OCTAVES) * 8 * chaosMult
+
+    // Fine noise — high frequency micro-detail
+    const micro = Math.sin(p.angle * 23 + t * 2.5) * 0.4
+
+    p.baseR = BASE_RADIUS + largeMorph
+    p.r = p.baseR + fractalDetail + micro
+
+    // Secondary detail ring (inner structure visible through translucency)
+    const dnx = Math.cos(p.angle + t * 0.1) * 2
+    const dny = Math.sin(p.angle + t * 0.08) * 2
+    p.detailR = BASE_RADIUS * 0.65 + fbm(dnx, dny, 3) * 5
   }
 }
 
-function traceSurface(
+function traceFractalPath(
   ctx: CanvasRenderingContext2D,
-  pts: SurfacePoint[],
+  pts: FractalPoint[],
   cx: number,
   cy: number,
+  radiusMul: number = 1,
 ) {
   ctx.beginPath()
   for (let i = 0; i <= pts.length; i++) {
     const curr = pts[i % pts.length]
     const next = pts[(i + 1) % pts.length]
     const prev = pts[(i - 1 + pts.length) % pts.length]
-    const x = cx + Math.cos(curr.angle) * curr.r
-    const y = cy + Math.sin(curr.angle) * curr.r
+    const r = curr.r * radiusMul
+    const x = cx + Math.cos(curr.angle) * r
+    const y = cy + Math.sin(curr.angle) * r
     if (i === 0) {
       ctx.moveTo(x, y)
     } else {
-      const cpx1 = x + (Math.cos(curr.angle) - Math.cos(prev.angle)) * curr.r * 0.2
-      const cpy1 = y + (Math.sin(curr.angle) - Math.sin(prev.angle)) * curr.r * 0.2
-      const cpx2 = x - (Math.cos(next.angle) - Math.cos(curr.angle)) * curr.r * 0.2
-      const cpy2 = y - (Math.sin(next.angle) - Math.sin(curr.angle)) * curr.r * 0.2
+      const pr = prev.r * radiusMul
+      const nr = next.r * radiusMul
+      const cpx1 = x + (Math.cos(curr.angle) - Math.cos(prev.angle)) * r * 0.18
+      const cpy1 = y + (Math.sin(curr.angle) - Math.sin(prev.angle)) * r * 0.18
+      const cpx2 = x - (Math.cos(next.angle) - Math.cos(curr.angle)) * r * 0.18
+      const cpy2 = y - (Math.sin(next.angle) - Math.sin(curr.angle)) * r * 0.18
       ctx.bezierCurveTo(cpx1, cpy1, cpx2, cpy2, x, y)
     }
   }
   ctx.closePath()
-}
-
-// ── Ink drips ────────────────────────────────────────────────────────────
-interface Drip {
-  x: number; y: number
-  vy: number
-  size: number
-  life: number; maxLife: number
-  opacity: number
-}
-
-function makeDrip(cx: number, cy: number, surface: SurfacePoint[]): Drip {
-  const angle = Math.random() * Math.PI * 2
-  const pt = surface[Math.floor((angle / (Math.PI * 2)) * BLOB_POINTS) % BLOB_POINTS]
-  const r = pt ? pt.r : BASE_RADIUS
-  return {
-    x: cx + Math.cos(angle) * r,
-    y: cy + Math.sin(angle) * r,
-    vy: 0.3 + Math.random() * 0.6,
-    size: 1.0 + Math.random() * 2.0,
-    life: 0,
-    maxLife: 1.5 + Math.random() * 2.0,
-    opacity: 0.5 + Math.random() * 0.3,
-  }
-}
-
-// ── Brush strokes (calligraphic) ────────────────────────────────────────
-interface BrushSeg { x: number; y: number }
-interface BrushStroke {
-  segs: BrushSeg[]
-  life: number; maxLife: number
-  width: number
-}
-
-function makeBrush(cx: number, cy: number): BrushStroke {
-  const startAngle = Math.random() * Math.PI * 2
-  const startR = BASE_RADIUS * 0.3 + Math.random() * BASE_RADIUS * 0.3
-  const segs: BrushSeg[] = []
-  let x = cx + Math.cos(startAngle) * startR
-  let y = cy + Math.sin(startAngle) * startR
-  let a = startAngle + (Math.random() - 0.5) * 1.5
-
-  for (let i = 0; i < BRUSH_SEGS; i++) {
-    segs.push({ x, y })
-    a += (Math.random() - 0.5) * 0.8
-    const step = 2 + Math.random() * 3
-    x += Math.cos(a) * step
-    y += Math.sin(a) * step
-  }
-
-  return {
-    segs,
-    life: 0,
-    maxLife: 0.6 + Math.random() * 1.2,
-    width: 1 + Math.random() * 2.5,
-  }
 }
 
 // ── Component ───────────────────────────────────────────────────────────
@@ -158,256 +137,222 @@ export function BlobCanvas() {
     const cx = w / 2
     const cy = h / 2
 
-    const surface = makeSurface()
-    const drips: Drip[] = []
-    const brushes: BrushStroke[] = []
-    let dripTimer = 0
-    let brushTimer = 0
-
-    // Paper grain texture (pre-rendered)
-    const grainCanvas = document.createElement('canvas')
-    grainCanvas.width = w
-    grainCanvas.height = h
-    const gCtx = grainCanvas.getContext('2d')!
-    const grainData = gCtx.createImageData(w, h)
-    for (let i = 0; i < grainData.data.length; i += 4) {
-      const v = Math.random() * 25
-      grainData.data[i] = v
-      grainData.data[i + 1] = v
-      grainData.data[i + 2] = v
-      grainData.data[i + 3] = 12
-    }
-    gCtx.putImageData(grainData, 0, 0)
+    const fractal = makeFractalSurface()
 
     const draw = (time: number) => {
       ctx.clearRect(0, 0, w, h)
       const t = time / 1000
+      const hue = isProcessing ? 270 : isDragging ? 200 : (t * BLOB.HUE_SPEED) % 360
+      const pm = isProcessing ? 1.4 : 1.0
 
       // ── Pulse ─────────────────────────────────────────────────────
       const pp = t * (Math.PI * 2 / (BLOB.BREATH_PERIOD_MS / 1000))
       const pulse = Math.sin(pp)
       const pI = (pulse + 1) * 0.5
 
-      // ── Surface morphing ──────────────────────────────────────────
-      updateSurface(surface, t, isProcessing)
+      // ── Update fractal ────────────────────────────────────────────
+      updateFractal(fractal, t, isProcessing)
 
       // ══════════════════════════════════════════════════════════════
-      // LAYER 1 — Paper grain texture
+      // LAYER 1 — Outer fractal halo (distant echo)
       // ══════════════════════════════════════════════════════════════
-      ctx.drawImage(grainCanvas, 0, 0)
+      const haloG = ctx.createRadialGradient(cx, cy, BASE_RADIUS * 0.8, cx, cy, BASE_RADIUS + 22)
+      haloG.addColorStop(0, `hsla(${hue}, 60%, 60%, 0.08)`)
+      haloG.addColorStop(0.5, `hsla(${hue}, 50%, 50%, 0.03)`)
+      haloG.addColorStop(1, `hsla(${hue}, 40%, 40%, 0)`)
+      ctx.beginPath()
+      ctx.arc(cx, cy, BASE_RADIUS + 22, 0, Math.PI * 2)
+      ctx.fillStyle = haloG
+      ctx.fill()
 
       // ══════════════════════════════════════════════════════════════
-      // LAYER 2 — Bleeding ink (soft diffused edges)
+      // LAYER 2 — Fractal detail rings (visible internal structure)
       // ══════════════════════════════════════════════════════════════
-      for (let layer = BLEED_LAYERS; layer >= 1; layer--) {
-        const f = layer / BLEED_LAYERS
-        const expandR = f * 8
-        const alpha = 0.04 * (1 - f * 0.6)
+      for (let ring = DETAIL_RINGS; ring >= 1; ring--) {
+        const ringFrac = ring / DETAIL_RINGS
+        const ringR = BASE_RADIUS * (0.35 + ringFrac * 0.35)
+        const ringAlpha = 0.04 * (1 - ringFrac * 0.5) * pm
 
-        ctx.save()
-        ctx.filter = `blur(${f * 3}px)`
-        traceSurface(ctx, surface, cx, cy)
-        ctx.scale(1 + f * 0.06, 1 + f * 0.06)
-        ctx.translate(-cx * f * 0.06, -cy * f * 0.06)
-        ctx.fillStyle = `rgba(15, 12, 8, ${alpha})`
-        ctx.fill()
-        ctx.restore()
-      }
-
-      // ══════════════════════════════════════════════════════════════
-      // LAYER 3 — Ink drips (falling droplets)
-      // ══════════════════════════════════════════════════════════════
-      dripTimer += 1 / 60
-      if (dripTimer > 0.4 && drips.length < DRIP_COUNT) {
-        drips.push(makeDrip(cx, cy, surface))
-        dripTimer = 0
-      }
-
-      for (let d = drips.length - 1; d >= 0; d--) {
-        const drip = drips[d]
-        drip.life += 1 / 60
-        drip.y += drip.vy
-        drip.vy += 0.02 // gravity
-        drip.size *= 0.998 // shrink
-
-        if (drip.life >= drip.maxLife || drip.size < 0.2) {
-          drips.splice(d, 1)
-          continue
+        ctx.beginPath()
+        for (let i = 0; i <= 96; i++) {
+          const a = (i / 96) * Math.PI * 2
+          const nx = Math.cos(a + t * 0.1 * ring) * 2
+          const ny = Math.sin(a + t * 0.08 * ring) * 2
+          const detail = fbm(nx, ny, 3) * 4
+          const r = ringR + detail
+          const x = cx + Math.cos(a) * r
+          const y = cy + Math.sin(a) * r
+          if (i === 0) ctx.moveTo(x, y)
+          else ctx.lineTo(x, y)
         }
-
-        const lifeFrac = drip.life / drip.maxLife
-        const alpha = drip.opacity * (1 - lifeFrac)
-
-        // Drip body
-        const dG = ctx.createRadialGradient(drip.x, drip.y, 0, drip.x, drip.y, drip.size)
-        dG.addColorStop(0, `rgba(15, 12, 8, ${alpha * 0.9})`)
-        dG.addColorStop(0.5, `rgba(20, 16, 10, ${alpha * 0.5})`)
-        dG.addColorStop(1, `rgba(25, 20, 12, 0)`)
-        ctx.beginPath()
-        ctx.arc(drip.x, drip.y, drip.size, 0, Math.PI * 2)
-        ctx.fillStyle = dG
-        ctx.fill()
-
-        // Drip trail
-        ctx.beginPath()
-        ctx.moveTo(drip.x, drip.y - drip.size * 2)
-        ctx.lineTo(drip.x, drip.y)
-        ctx.strokeStyle = `rgba(15, 12, 8, ${alpha * 0.3})`
-        ctx.lineWidth = drip.size * 0.4
-        ctx.lineCap = 'round'
+        ctx.closePath()
+        ctx.strokeStyle = `hsla(${hue + ring * 8}, 55%, 65%, ${ringAlpha})`
+        ctx.lineWidth = 0.5
         ctx.stroke()
       }
 
       // ══════════════════════════════════════════════════════════════
-      // LAYER 4 — Calligraphic brush strokes (processing)
+      // LAYER 3 — Fractal body fill
       // ══════════════════════════════════════════════════════════════
-      if (isProcessing) {
-        brushTimer += 1 / 60
-        if (brushTimer > 0.25 && brushes.length < BRUSH_COUNT) {
-          brushes.push(makeBrush(cx, cy))
-          brushTimer = 0
-        }
-      }
+      traceFractalPath(ctx, fractal, cx, cy)
 
-      for (let b = brushes.length - 1; b >= 0; b--) {
-        const brush = brushes[b]
-        brush.life += 1 / 60
-        if (brush.life >= brush.maxLife) {
-          brushes.splice(b, 1)
-          continue
-        }
-
-        const lifeFrac = brush.life / brush.maxLife
-        const alpha = lifeFrac < 0.15 ? lifeFrac / 0.15 : 1 - (lifeFrac - 0.15) / 0.85
-
-        // Calligraphic stroke — pressure varies along the path
-        for (let i = 0; i < brush.segs.length - 1; i++) {
-          const f0 = i / (brush.segs.length - 1)
-          const f1 = (i + 1) / (brush.segs.length - 1)
-          // Pressure: thick in middle, thin at ends (like a brush)
-          const pressure0 = Math.sin(f0 * Math.PI) * 0.8 + 0.2
-          const pressure1 = Math.sin(f1 * Math.PI) * 0.8 + 0.2
-          const w0 = brush.width * pressure0
-          const w1 = brush.width * pressure1
-
-          ctx.beginPath()
-          ctx.moveTo(brush.segs[i].x, brush.segs[i].y)
-          ctx.lineTo(brush.segs[i + 1].x, brush.segs[i + 1].y)
-          ctx.strokeStyle = `rgba(15, 12, 8, ${0.7 * alpha})`
-          ctx.lineWidth = w0
-          ctx.lineCap = 'round'
-          ctx.stroke()
-        }
-
-        // Glow around stroke
-        ctx.beginPath()
-        ctx.moveTo(brush.segs[0].x, brush.segs[0].y)
-        for (let i = 1; i < brush.segs.length; i++) {
-          ctx.lineTo(brush.segs[i].x, brush.segs[i].y)
-        }
-        ctx.strokeStyle = `rgba(40, 30, 20, ${0.12 * alpha})`
-        ctx.lineWidth = brush.width * 4
-        ctx.lineCap = 'round'
-        ctx.stroke()
-      }
-
-      // ══════════════════════════════════════════════════════════════
-      // LAYER 5 — Ink body (main blob)
-      // ══════════════════════════════════════════════════════════════
-      traceSurface(ctx, surface, cx, cy)
-      const bodyG = ctx.createRadialGradient(cx - 4, cy - 4, 0, cx, cy, BASE_RADIUS + 4)
-      bodyG.addColorStop(0, `rgba(35, 28, 18, 0.92)`)
-      bodyG.addColorStop(0.3, `rgba(22, 18, 10, 0.95)`)
-      bodyG.addColorStop(0.7, `rgba(12, 10, 5, 0.97)`)
-      bodyG.addColorStop(1, `rgba(8, 6, 3, 0.98)`)
+      // Layered gradient for depth
+      const bodyG = ctx.createRadialGradient(cx, cy, 0, cx, cy, BASE_RADIUS + 10)
+      bodyG.addColorStop(0, `hsla(${hue + 15}, 50%, 72%, 0.55)`)
+      bodyG.addColorStop(0.25, `hsla(${hue + 8}, 55%, 60%, 0.50)`)
+      bodyG.addColorStop(0.5, `hsla(${hue}, 60%, 50%, 0.55)`)
+      bodyG.addColorStop(0.75, `hsla(${hue - 8}, 65%, 42%, 0.60)`)
+      bodyG.addColorStop(1, `hsla(${hue - 15}, 70%, 35%, 0.65)`)
       ctx.fillStyle = bodyG
       ctx.fill()
 
       // ══════════════════════════════════════════════════════════════
-      // LAYER 6 — Wet ink surface (glossy reflection)
+      // LAYER 4 — Inner glow (smooth core, contrasting with fractal edge)
       // ══════════════════════════════════════════════════════════════
-      traceSurface(ctx, surface, cx, cy)
       ctx.save()
+      traceFractalPath(ctx, fractal, cx, cy)
       ctx.clip()
 
-      // Wet sheen — moves across surface
-      const sheenX = cx + Math.sin(t * 0.3) * 8
-      const sheenY = cy - BASE_RADIUS * 0.3 + Math.cos(t * 0.4) * 3
-      const sheenG = ctx.createRadialGradient(sheenX, sheenY, 0, sheenX, sheenY, BASE_RADIUS * 0.8)
-      sheenG.addColorStop(0, `rgba(80, 70, 55, ${0.15 + pI * 0.08})`)
-      sheenG.addColorStop(0.3, `rgba(60, 52, 40, ${0.08 + pI * 0.04})`)
-      sheenG.addColorStop(0.7, `rgba(40, 35, 25, ${0.02})`)
-      sheenG.addColorStop(1, `rgba(20, 18, 12, 0)`)
-      ctx.fillStyle = sheenG
+      const coreG = ctx.createRadialGradient(cx, cy, 0, cx, cy, BASE_RADIUS * 0.7)
+      coreG.addColorStop(0, `hsla(${hue + 25}, 45%, 85%, ${0.25 + pI * 0.12})`)
+      coreG.addColorStop(0.4, `hsla(${hue + 15}, 55%, 72%, ${0.12 + pI * 0.06})`)
+      coreG.addColorStop(0.7, `hsla(${hue + 5}, 60%, 60%, ${0.04})`)
+      coreG.addColorStop(1, `hsla(${hue}, 65%, 50%, 0)`)
+      ctx.fillStyle = coreG
       ctx.fillRect(0, 0, w, h)
 
-      // Specular dot
-      const specG = ctx.createRadialGradient(sheenX - 5, sheenY - 4, 0, sheenX - 5, sheenY - 4, 4)
-      specG.addColorStop(0, `rgba(120, 105, 80, ${0.35 + pI * 0.15})`)
-      specG.addColorStop(0.5, `rgba(90, 78, 58, ${0.12})`)
-      specG.addColorStop(1, `rgba(60, 52, 38, 0)`)
-      ctx.fillStyle = specG
+      // ══════════════════════════════════════════════════════════════
+      // LAYER 5 — Mandelbrot-inspired spiral detail (inside the core)
+      // ══════════════════════════════════════════════════════════════
+      const spiralCount = isProcessing ? 5 : 3
+      for (let s = 0; s < spiralCount; s++) {
+        const sa = t * (0.15 + s * 0.08) + s * 2.4
+        ctx.beginPath()
+        for (let i = 0; i <= 80; i++) {
+          const f = i / 80
+          const a = sa + f * Math.PI * 4
+          const r = f * BASE_RADIUS * 0.6
+          const wobble = Math.sin(f * 12 + t * 1.5) * 0.5
+          const x = cx + Math.cos(a) * (r + wobble)
+          const y = cy + Math.sin(a) * (r + wobble)
+          if (i === 0) ctx.moveTo(x, y)
+          else ctx.lineTo(x, y)
+        }
+        ctx.strokeStyle = `hsla(${hue + 10 + s * 5}, 55%, 70%, ${0.06 * pm})`
+        ctx.lineWidth = 0.6
+        ctx.stroke()
+      }
+
+      ctx.restore()
+
+      // ══════════════════════════════════════════════════════════════
+      // LAYER 6 — Fractal boundary (the signature element)
+      // ══════════════════════════════════════════════════════════════
+      // Outer boundary — sharp
+      traceFractalPath(ctx, fractal, cx, cy)
+      ctx.strokeStyle = `hsla(${hue}, 50%, 65%, 0.18)`
+      ctx.lineWidth = 0.8
+      ctx.stroke()
+
+      // Middle boundary — glow
+      traceFractalPath(ctx, fractal, cx, cy)
+      ctx.strokeStyle = `hsla(${hue + 5}, 55%, 60%, 0.08)`
+      ctx.lineWidth = 2.5
+      ctx.stroke()
+
+      // Inner boundary — wide glow
+      traceFractalPath(ctx, fractal, cx, cy)
+      ctx.strokeStyle = `hsla(${hue + 10}, 60%, 55%, 0.03)`
+      ctx.lineWidth = 5
+      ctx.stroke()
+
+      // ══════════════════════════════════════════════════════════════
+      // LAYER 7 — Fractal tendrils (protrusions that reach outward)
+      // ══════════════════════════════════════════════════════════════
+      const tendrilCount = isProcessing ? 8 : 5
+      for (let i = 0; i < tendrilCount; i++) {
+        const ta = (i / tendrilCount) * Math.PI * 2 + t * 0.05
+        const pt = fractal[Math.floor((ta / (Math.PI * 2)) * FRACTAL_POINTS) % FRACTAL_POINTS]
+        if (!pt) continue
+
+        const baseR = pt.r
+        const tendrilLen = 6 + Math.sin(t * 1.5 + i * 1.7) * 3
+        const tendrilAngle = ta + Math.sin(t * 0.8 + i * 2.3) * 0.3
+
+        const tx = cx + Math.cos(tendrilAngle) * (baseR + tendrilLen)
+        const ty = cy + Math.sin(tendrilAngle) * (baseR + tendrilLen)
+
+        const tG = ctx.createLinearGradient(
+          cx + Math.cos(tendrilAngle) * baseR,
+          cy + Math.sin(tendrilAngle) * baseR,
+          tx, ty,
+        )
+        tG.addColorStop(0, `hsla(${hue}, 55%, 60%, 0.12)`)
+        tG.addColorStop(0.5, `hsla(${hue + 5}, 50%, 55%, 0.06)`)
+        tG.addColorStop(1, `hsla(${hue + 10}, 45%, 50%, 0)`)
+
+        ctx.beginPath()
+        ctx.moveTo(
+          cx + Math.cos(tendrilAngle) * baseR,
+          cy + Math.sin(tendrilAngle) * baseR,
+        )
+        ctx.lineTo(tx, ty)
+        ctx.strokeStyle = tG
+        ctx.lineWidth = 1.5
+        ctx.lineCap = 'round'
+        ctx.stroke()
+      }
+
+      // ══════════════════════════════════════════════════════════════
+      // LAYER 8 — Specular highlight
+      // ══════════════════════════════════════════════════════════════
+      const spX = cx - 6
+      const spY = cy - BASE_RADIUS * 0.35
+      const spG = ctx.createRadialGradient(spX, spY, 0, spX, spY, 7)
+      spG.addColorStop(0, `hsla(${hue + 30}, 30%, 96%, 0.55)`)
+      spG.addColorStop(0.35, `hsla(${hue + 20}, 40%, 90%, 0.22)`)
+      spG.addColorStop(0.7, `hsla(${hue + 10}, 50%, 82%, 0.04)`)
+      spG.addColorStop(1, `hsla(${hue}, 60%, 75%, 0)`)
       ctx.beginPath()
-      ctx.ellipse(sheenX - 5, sheenY - 4, 4, 2.5, -0.3, 0, Math.PI * 2)
+      ctx.ellipse(spX, spY, 7, 4, -0.3, 0, Math.PI * 2)
+      ctx.fillStyle = spG
       ctx.fill()
 
-      ctx.restore()
-
       // ══════════════════════════════════════════════════════════════
-      // LAYER 7 — Ink edge (organic bleeding boundary)
-      // ══════════════════════════════════════════════════════════════
-      traceSurface(ctx, surface, cx, cy)
-      ctx.strokeStyle = `rgba(25, 20, 12, 0.35)`
-      ctx.lineWidth = 1.2
-      ctx.stroke()
-
-      // Secondary bleed edge
-      ctx.save()
-      ctx.filter = 'blur(1.5px)'
-      traceSurface(ctx, surface, cx, cy)
-      ctx.strokeStyle = `rgba(20, 16, 8, 0.10)`
-      ctx.lineWidth = 3
-      ctx.stroke()
-      ctx.restore()
-
-      // ══════════════════════════════════════════════════════════════
-      // LAYER 8 — Processing (ink swirl)
+      // LAYER 9 — Processing (fractal acceleration)
       // ══════════════════════════════════════════════════════════════
       if (isProcessing) {
-        const pp2 = Math.sin(t * 3) * 0.3 + 0.7
+        const pp2 = Math.sin(t * 4) * 0.3 + 0.7
 
-        // Swirling ink lines inside the blob
-        for (let s = 0; s < 3; s++) {
-          const sa = t * (1.2 + s * 0.4) + s * 2.1
-          const sr = BASE_RADIUS * 0.5 + Math.sin(t * 2 + s) * 4
-
-          ctx.beginPath()
-          for (let i = 0; i <= 32; i++) {
-            const a = (i / 32) * Math.PI * 2
-            const spiralR = sr * (1 - (i / 32) * 0.6)
-            const x = cx + Math.cos(a + sa) * spiralR
-            const y = cy + Math.sin(a + sa) * spiralR
-            if (i === 0) ctx.moveTo(x, y)
-            else ctx.lineTo(x, y)
-          }
-          ctx.strokeStyle = `rgba(50, 42, 28, ${0.12 * pp2})`
-          ctx.lineWidth = 0.8
-          ctx.stroke()
-        }
-
-        // Ink ripple rings
+        // Energy rings
         for (let r = 0; r < 2; r++) {
-          const ringPhase = (t * 2 + r * 1.2) % 3
-          const ringAlpha = ringPhase < 1.5 ? ringPhase / 1.5 : (3 - ringPhase) / 1.5
-          const ringR = BASE_RADIUS + 3 + ringPhase * 8
+          const ringPhase = (t * 2.2 + r * 1.0) % 2.5
+          const ringAlpha = ringPhase < 1.2 ? ringPhase / 1.2 : (2.5 - ringPhase) / 1.3
+          const ringR = BASE_RADIUS + 4 + ringPhase * 12
 
           ctx.beginPath()
           ctx.arc(cx, cy, ringR, 0, Math.PI * 2)
-          ctx.strokeStyle = `rgba(25, 20, 12, ${0.08 * ringAlpha * pp2})`
-          ctx.lineWidth = 0.8
+          ctx.strokeStyle = `hsla(${hue + 10}, 60%, 65%, ${0.08 * ringAlpha * pp2})`
+          ctx.lineWidth = 1
           ctx.stroke()
         }
+
+        // Fractal burst (many small protrusions)
+        for (let b = 0; b < 12; b++) {
+          const ba = (b / 12) * Math.PI * 2 + t * 0.3
+          const br = BASE_RADIUS + 5 + Math.sin(t * 3 + b * 1.3) * 4
+          const bx = cx + Math.cos(ba) * br
+          const by = cy + Math.sin(ba) * br
+
+          ctx.beginPath()
+          ctx.arc(bx, by, 1.2, 0, Math.PI * 2)
+          ctx.fillStyle = `hsla(${hue + 15}, 60%, 72%, ${0.15 * pp2})`
+          ctx.fill()
+        }
       }
+
+      // ── Hue sync ──────────────────────────────────────────────────
+      localStorage.setItem('blob-hue', String(Math.round(hue)))
 
       raf = requestAnimationFrame(draw)
     }
