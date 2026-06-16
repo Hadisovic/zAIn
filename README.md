@@ -1,9 +1,9 @@
-# 🌌 zAIn
+# 🌌 Jelli
 
 <div align="center">
-  <img src="zain-companion/src/assets/hero.png" alt="zAIn Logo" width="180" style="border-radius: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.2);" />
+  <img src="jelli-companion/src/assets/hero.png" alt="Jelli Logo" width="180" style="border-radius: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.2);" />
   
-  <h3>zAIn</h3>
+  <h3>Jelli</h3>
   <p><strong>The Next-Generation Agentic Desktop Experience</strong></p>
 
   <p>
@@ -17,9 +17,9 @@
 
 ## 🚀 Overview
 
-**zAIn** merges advanced agentic AI capabilities with a desktop companion interface powered by Tauri v2, React 19, and local/remote LLM orchestration. 
+**Jelli** merges advanced agentic AI capabilities with a desktop companion interface powered by Tauri v2, React 19, and local/remote LLM orchestration. 
 
-Built for speed and responsiveness, zAIn utilizes the [Dia 2](https://github.com/nari-labs/dia2) speech generation engine for near-instant speech responses. Clicking the floating desktop widget opens a glassmorphic chat interface, streams the LLM response character-by-character, and progressively synthesizes voice output.
+Built for speed and responsiveness, Jelli utilizes the [Dia 2](https://github.com/nari-labs/dia2) speech generation engine for near-instant speech responses. Clicking the floating desktop widget opens a glassmorphic chat interface, streams the LLM response character-by-character, and progressively synthesizes voice output.
 
 ---
 
@@ -68,11 +68,11 @@ graph TD
 
 ## 🛠️ Repository Structure
 
-Here is a quick look at the main modules of the **zAIn** ecosystem:
+Here is a quick look at the main modules of the **Jelli** ecosystem:
 
 | Module | Purpose | Tech Stack |
 | :--- | :--- | :--- |
-| [`/zain-companion`](./zain-companion) | Main Desktop App Shell | React 19, TypeScript, Vite, Tauri v2, Dia 2 Sidecar |
+| [`/jelli-companion`](./jelli-companion) | Main Desktop App Shell | React 19, TypeScript, Vite, Tauri v2, Dia 2 Sidecar |
 | [`/progress`](./progress) | Development Roadmaps & Phases | Consolidated Markdown logs |
 | [`.claude`](./.claude) | Workspace and Agent Settings | Local permissions & JSON Config |
 
@@ -92,5 +92,5 @@ Check out the [`progress/`](./progress) folder for details on our active milesto
 ---
 
 <div align="center">
-  <sub>Built with ❤️ by the zAIn Development Team</sub>
+  <sub>Built with ❤️ by the Jelli Development Team</sub>
 </div>

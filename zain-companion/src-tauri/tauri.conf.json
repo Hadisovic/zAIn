@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Zain Companion",
+  "productName": "Jelli Companion",
   "version": "0.1.0",
-  "identifier": "com.zain.companion",
+  "identifier": "com.jelli.companion",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Zain Companion",
+        "title": "Jelli Companion",
         "width": 140,
         "height": 160,
         "decorations": false,
@@ -28,7 +28,7 @@
       },
       {
         "label": "chat",
-        "title": "Zain Chat",
+        "title": "Jelli Chat",
         "width": 360,
         "height": 56,
         "decorations": false,

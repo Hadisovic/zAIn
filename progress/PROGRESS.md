@@ -1,4 +1,4 @@
-# Zain Companion — Complete Progress
+# Jelli Companion — Complete Progress
 
 **Last Updated:** 2026-06-16
 **Status:** Active development
@@ -30,7 +30,7 @@
 
 ## 1. Project Overview
 
-Zain Companion is a desktop AI companion built with Tauri v2 (Rust + React). A small, transparent, always-on-top blob sits on the desktop. Click it to open a chat textbox, type a message, and get an AI response spoken aloud.
+Jelli Companion is a desktop AI companion built with Tauri v2 (Rust + React). A small, transparent, always-on-top blob sits on the desktop. Click it to open a chat textbox, type a message, and get an AI response spoken aloud.
 
 ### Core Loop
 ```
@@ -487,7 +487,7 @@ LLM response (string)
 
 ## 10. File Map
 
-### Frontend (`zain-companion/src/`)
+### Frontend (`jelli-companion/src/`)
 
 | File | Purpose |
 |------|---------|
@@ -510,7 +510,7 @@ LLM response (string)
 | `styles/globals.css` | Tailwind v4 + glassmorphism + neumorphism + breathing border + send flash + ink cursor animations |
 | `types/tauri.d.ts` | `window.__TAURI__` type declaration |
 
-### Backend (`zain-companion/src-tauri/src/`)
+### Backend (`jelli-companion/src-tauri/src/`)
 
 | File | Purpose |
 |------|---------|
@@ -621,7 +621,7 @@ LLM response (string)
 
 ```bash
 # Development with hot reload
-cd zain-companion
+cd jelli-companion
 npm run tauri dev
 
 # Production build (MSI + NSIS installers)
@@ -722,7 +722,7 @@ cd csm && pip install -e .
 ### 8. Dev Build Speed & Linker Optimization
 - **Goal:** Reduce compile and rebuild times which were taking up to 10 minutes.
 - **Changes:**
-  - Added `zain-companion/src-tauri/.cargo/config.toml` configuring the `rust-lld` fast linker for Windows MSVC (dramatically reducing link times).
+  - Added `jelli-companion/src-tauri/.cargo/config.toml` configuring the `rust-lld` fast linker for Windows MSVC (dramatically reducing link times).
   - Modified `Cargo.toml` `[profile.dev]` settings: local code builds at `opt-level = 0` and `debug = 1` for fast compilation, while external dependencies compile at `opt-level = 3` to run at full speed and utilize cached builds.
 
 ### 9. TypeScript Cleanup
@@ -759,10 +759,10 @@ cd csm && pip install -e .
 - **Decaying Angry-to-Normal Crossfade:**
   - Programmed a 1.5s visual decay fade-out via a decaying alpha variable (`madAlphaRef`), blending the angry features (red overlay and anger vein) out smoothly rather than snapping.
 - **Removal of Unused Arm Properties:**
-  - Cleaned up the `BLOB` configurations inside [constants.ts](file:///d:/zAIn-master/zain-companion/src/lib/constants.ts) by removing unused arm settings.
+  - Cleaned up the `BLOB` configurations inside [constants.ts](file:///d:/Jelli-master/jelli-companion/src/lib/constants.ts) by removing unused arm settings.
 - **Accelerated Mode Transitions & Timing Tweaks:**
   - Sped up all expression transitions by 2x. Halved timing constants: `RAGE_DIZZY_SECONDS` reduced to `0.6s`, `RAGE_MORPH_SECONDS` to `0.4s`, `RAGE_OUTRO_SECONDS` to `0.8s`, `SLEEP_INTRO_SECONDS` to `1.5s`, `SLEEP_OUTRO_SECONDS` to `0.9s`, and `MODE_TRANSITION_SECONDS` to `0.12s`.
-  - Doubled the frame-lerp rates in [BlobCanvas.tsx](file:///d:/zAIn-master/zain-companion/src/components/BlobCanvas.tsx) for snappier transitions.
+  - Doubled the frame-lerp rates in [BlobCanvas.tsx](file:///d:/Jelli-master/jelli-companion/src/components/BlobCanvas.tsx) for snappier transitions.
   - Reduced the duration of the angry mode loop by 30% (`RAGE_LOOP_MIN_SECONDS` to `5.6s` and `RAGE_LOOP_VARIANCE_SECONDS` to `1.4s`).
 - **Instant Smile Morph & Synced Mouth Transitions:**
   - Replaced the slow `happyIntro`/`happyOutro` scaling with a fast `happyAlphaRef` interpolation, syncing the eye and mouth morphs.
