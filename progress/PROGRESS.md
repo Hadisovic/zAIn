@@ -24,6 +24,7 @@
 14. [Build & Run Commands](#14-build--run-commands)
 15. [Key Decisions](#15-key-decisions)
 16. [Notes](#16-notes)
+17. [Recent Updates](#17-recent-updates)
 
 ---
 
@@ -674,6 +675,60 @@ cd csm && pip install -e .
 - TTS model planned to switch from Sesame CSM to **Dia 2** (https://github.com/nari-labs/dia2)
 - Phase 5 (Particles + Installer) is planned but not started — excluded from this progress file
 - Phase 3 (Desktop Awareness) is deferred — may be skipped entirely
+
+---
+
+## 17. Recent Updates (June 16, 2026)
+
+### 1. Multi-Monitor Chat Box Display Fix
+- **Issue:** The chat box was stuck on the primary display and did not follow the main window coordinates correctly.
+- **Fix:** Added `get_screen_info` Rust command returning monitor position + size. Updated chat position clamping in `BlobCanvas.tsx` to account for monitor offset in virtual screen space.
+
+### 2. Chat Follows Blob Across Monitors During Drag
+- **Issue:** Dragging the blob to a second screen left the chat textbox behind.
+- **Fix:** Replaced debounced `getScreenInfo()` ref with inline per-frame `getScreenInfo()` calls during drag, ensuring fresh monitor info for every position update.
+
+### 3. System-Level Cursor Tracking
+- **Issue:** Jellyfish eyes only tracked the mouse within the Tauri window (canvas mousemove events stop when cursor leaves).
+- **Fix:** Added `get_cursor_position` Rust command using Win32 `GetCursorPos` API. Replaced canvas `mousemove` listener with 16ms `setInterval` polling system-wide cursor position. Eyes now track the cursor anywhere on screen, across monitors.
+
+### 4. Jellyfish Expressions System
+- Added 7 expressions: `idle`, `annoyed`, `dizzy`, `sleepy`, `happy`, `surprised`, `shy`
+- **Dizzy:** Triggered after dragging >2.5s — spiral rotating eyes, orbiting star particles, erratic tentacle wobble
+- **Annoyed:** Active drag — angled eyebrows, slight squint
+- **Sleepy:** Idle >8s — half-closed eyes, floating "zZz" particles
+- **Happy:** Random idle chance (2-4s) — eyes curve into ^_^ arcs
+- **Surprised:** Fast mouse near blob — eyes widen 1.2x, small "o" mouth
+- **Shy:** Mouse within 120px — blush marks, dampened eye tracking
+- Expression priority: dizzy > annoyed > sleepy > happy > surprised > shy > idle
+
+### 5. Full Black Eyes with Cursor Tracking
+- Replaced white+iris+pupil system with solid black ellipses
+- Entire eye shifts toward cursor (`ep * 1.2`)
+- Subtle iris ring drawn inside each eye (follows at 70% speed for depth)
+- Specular highlights counter-shift for 3D feel
+
+### 6. Stronger Glow & Transparency
+- Ambient glow radius 52→58, center alpha 0.16→0.28
+- Bell body more transparent (edge alpha 0.50→0.20)
+- Core glow center alpha 0.30→0.40, wider spread
+- Organ halos 2.5x→2.8x size, brighter cores
+- Membrane stroke thinner (1.2→1.0px) and more transparent
+
+### 7. Debug Console Cleanup
+- Removed all 24 `println!`/`eprintln!` debug statements from `lib.rs`
+- Functions now silently handle errors (window commands return early on failure)
+
+### 8. Dev Build Speed & Linker Optimization
+- **Goal:** Reduce compile and rebuild times which were taking up to 10 minutes.
+- **Changes:**
+  - Added `zain-companion/src-tauri/.cargo/config.toml` configuring the `rust-lld` fast linker for Windows MSVC (dramatically reducing link times).
+  - Modified `Cargo.toml` `[profile.dev]` settings: local code builds at `opt-level = 0` and `debug = 1` for fast compilation, while external dependencies compile at `opt-level = 3` to run at full speed and utilize cached builds.
+
+### 9. TypeScript Cleanup
+- Removed unused `ORGAN_COUNT` constant and `w1` variable from `BlobCanvas.tsx`
+- Removed unused dependencies: `@rive-app/react-canvas`, `@vaerone/use-flip`
+- Removed unused store fields: `vizPreset`, `contextMessages`
 
 ---
 
