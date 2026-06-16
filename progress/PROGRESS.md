@@ -758,9 +758,25 @@ cd csm && pip install -e .
   - Normal drags (< 2.5s) return directly to standard idle.
 - **Decaying Angry-to-Normal Crossfade:**
   - Programmed a 1.5s visual decay fade-out via a decaying alpha variable (`madAlphaRef`), blending the angry features (red overlay and anger vein) out smoothly rather than snapping.
-- **Cross-Window CSS Variable Color Sync:**
-  - Modified `BlobCanvas.tsx` to write live HSL values (`blob-hue`, `blob-sat`, `blob-light`) to `localStorage` every frame.
-  - Modified `ChatTextbox.tsx` to poll and apply these variables dynamically. This synchronizes the chat textbox's glassmorphic background colors and neumorphic borders with the exact breathing, organic hues of the main blob window.
+- **Removal of Unused Arm Properties:**
+  - Cleaned up the `BLOB` configurations inside [constants.ts](file:///d:/zAIn-master/zain-companion/src/lib/constants.ts) by removing unused arm settings.
+- **Accelerated Mode Transitions & Timing Tweaks:**
+  - Sped up all expression transitions by 2x. Halved timing constants: `RAGE_DIZZY_SECONDS` reduced to `0.6s`, `RAGE_MORPH_SECONDS` to `0.4s`, `RAGE_OUTRO_SECONDS` to `0.8s`, `SLEEP_INTRO_SECONDS` to `1.5s`, `SLEEP_OUTRO_SECONDS` to `0.9s`, and `MODE_TRANSITION_SECONDS` to `0.12s`.
+  - Doubled the frame-lerp rates in [BlobCanvas.tsx](file:///d:/zAIn-master/zain-companion/src/components/BlobCanvas.tsx) for snappier transitions.
+  - Reduced the duration of the angry mode loop by 30% (`RAGE_LOOP_MIN_SECONDS` to `5.6s` and `RAGE_LOOP_VARIANCE_SECONDS` to `1.4s`).
+- **Instant Smile Morph & Synced Mouth Transitions:**
+  - Replaced the slow `happyIntro`/`happyOutro` scaling with a fast `happyAlphaRef` interpolation, syncing the eye and mouth morphs.
+- **Unified Vector-Morphing Eye System:**
+  - Implemented state-tracked quadratic curve eye-morphing variables (`eyeMorphRxRef`, `eyeMorphRyTopRef`, `eyeMorphRyBotRef`, `eyeMorphRotRef`, `eyeMorphIsStrokeRef`, `eyeMorphYOffRef`, `eyeMorphPXRef`, `eyeMorphPYRef`) inside the component and updated their targets dynamically inside `draw()`.
+  - Switched eye drawing from cross-fade alpha-blending of different layers to a smooth geometric vector morph using quadratic curves, allowing the eyes to change shape (e.g., smiling arcs, closed arcs, angry tilts, surprised ovals) instantly and organically.
+- **Canvas Transform & Path Separation Bug Fixes:**
+  - Added `ctx.setTransform(1, 0, 0, 1, 0, 0)` at the start of the `draw()` loop to reset the transform matrix. This prevents any runtime errors or mid-draw exceptions from leaving the canvas permanently rotated/shifted, resolving the visual issue where the entire body and tentacles rendered tilted and shifted far left.
+  - Added a `ctx.beginPath()` and traced the eyelids path right before the stroke operation in Layer 6. This prevents the stroke path from being contaminated by the pupil and highlight circle sub-paths, resolving the issue where eyes rendered as a single black diamond.
+  - Fixed multiple TypeScript compiler errors such as `Cannot find name 'madAlpha'` by properly declaring `const madAlpha = madAlphaRef.current` inside the `draw()` loop, and removed unused eye variables to keep build output clean.
+- **Forced Color Transitions through Purple/Blue:**
+  - Adjusted HSL target colors during the mad sequence (`madT1` and the target red in `inTransition`) by changing the red hue from `0` to `360`. This mathematical shift forces color interpolation (`mixHue`) to pass through purple/blue/magenta (`180 → 270 → 360`) instead of green/yellow/orange (`180 → 90 → 0`) when returning to normal mode.
+- **Eliminated Drag Overlay in Dizzy Mode:**
+  - Modified the `><` overlay condition to only render if `expression !== 'dizzy' && expression !== 'mad'`, immediately hiding the dragging overlay when dizzy mode starts and preventing it from overlapping the white dizzy spirals.
 
 ---
 

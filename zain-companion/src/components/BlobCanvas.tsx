@@ -8,6 +8,20 @@ const DRAG_THRESHOLD = 6
 const CHAT_W = 360
 const CHAT_H_COLLAPSED = 56
 const CHAT_H_EXPANDED = 250
+const FRAME_SECONDS = 1 / 60
+const MAX_FRAME_SECONDS = 1 / 30
+const RAGE_HOLD_MS = 2500
+const RAGE_DIZZY_SECONDS = 0.6
+const RAGE_MORPH_SECONDS = 0.4
+const RAGE_LOOP_MIN_SECONDS = 5.6
+const RAGE_LOOP_VARIANCE_SECONDS = 1.4
+const RAGE_OUTRO_SECONDS = 0.8
+const SLEEP_IDLE_MS = 8000
+const SLEEP_INTRO_SECONDS = 1.5
+const SLEEP_OUTRO_SECONDS = 0.9
+const MODE_TRANSITION_SECONDS = 0.12
+
+type HslColor = { h: number; s: number; l: number }
 
 // ── Expressions ──────────────────────────────────────────────────────────
 type Expression = 'idle' | 'annoyed' | 'dizzy' | 'sleepy' | 'happy' | 'surprised' | 'shy' | 'mad'
@@ -116,6 +130,43 @@ function lerpValue(current: number, target: number, speed: number) {
   return current + (target - current) * speed
 }
 
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value))
+}
+
+function clamp01(value: number) {
+  return clamp(value, 0, 1)
+}
+
+function frameLerp(speedAt60Fps: number, dt: number) {
+  return 1 - Math.pow(1 - speedAt60Fps, dt / FRAME_SECONDS)
+}
+
+function tickTimer(seconds: number, dt: number) {
+  return Math.max(0, seconds - dt)
+}
+
+function easeOutCubic(t: number) {
+  const p = 1 - clamp01(t)
+  return 1 - p * p * p
+}
+
+function mixHue(from: number, to: number, amount: number) {
+  let diff = (to - from) % 360
+  if (diff > 180) diff -= 360
+  if (diff < -180) diff += 360
+  return (from + diff * clamp01(amount) + 360) % 360
+}
+
+function mixHsl(from: HslColor, to: HslColor, amount: number): HslColor {
+  const t = clamp01(amount)
+  return {
+    h: mixHue(from.h, to.h, t),
+    s: lerpValue(from.s, to.s, t),
+    l: lerpValue(from.l, to.l, t),
+  }
+}
+
 // ── Component ───────────────────────────────────────────────────────────
 export function BlobCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -125,6 +176,8 @@ export function BlobCanvas() {
   const setBlobScreenPos = useConfigStore((s) => s.setBlobScreenPos)
   const isProcessing = useChatStore((s) => s.isProcessing)
 
+  const draggingStateRef = useRef(isDragging)
+  const processingStateRef = useRef(isProcessing)
   const isPointerDownRef = useRef(false)
   const isDraggingRef = useRef(false)
   const didDragRef = useRef(false)
@@ -135,7 +188,7 @@ export function BlobCanvas() {
   const eyeTargetRef = useRef({ x: 0, y: 0 })
   const eyePosRef = useRef({ x: 0, y: 0 })
   const blinkTimerRef = useRef(0)
-  const nextBlinkThresholdRef = useRef(8 + Math.random() * 8)  // 8-16s interval
+  const nextBlinkThresholdRef = useRef(12)
   const isBlinkingRef = useRef(false)
   const blinkPhaseRef = useRef(0)
   // Drag velocity for ocean jellyfish lean
@@ -145,14 +198,13 @@ export function BlobCanvas() {
   // Smoothed squint
   const squintCurrentRef = useRef(0)
   // Staged post-drag transitions
-  const postDragDizzyRef = useRef(0)   // 1s dizziness fade after drag ends
-  const postDragPauseRef = useRef(0)   // 0.5s calm pause before mad
+  const postDragDizzyRef = useRef(0)   // 2s dizzy buffer after drag release
   // Mad cooldown
   const madCooldownRef = useRef(0)
-  const madTotalRef = useRef(0)
   const prevDraggingRef = useRef(false)
   // Happy: ref so it persists across effect re-runs (drag state changes re-run the effect)
   const happyCooldownRef = useRef(0)
+  const happyTotalRef = useRef(0)
   // Blocks happy from triggering for 30s after a rage phase ends
   const madRecoveryRef = useRef(0)
   // Petting detection: horizontal wiggles near the blob
@@ -165,6 +217,39 @@ export function BlobCanvas() {
   // Custom spin angle and smooth rage transitions
   const dizzySpinAngleRef = useRef(0)
   const madAlphaRef = useRef(0)
+  const happyAlphaRef = useRef(0)
+  // Transition choreography
+  const prevExpressionRef = useRef<Expression>('idle')
+  const transitionTimerRef = useRef(1)  // start at 1 (no transition pending)
+  const popRef = useRef(0)
+  // Sleep choreography: 5-second intro + 3-second outro
+  const sleepTransitionRef = useRef(0)
+  // Sleep outro: 3-second wake-up
+  const sleepOutroRef = useRef(0)
+  // Rage sequence lock: true from drag-start until mad outro finishes
+  const ragSequenceActiveRef = useRef(false)
+  // Dizzy→Mad transition: 1.0s cross-fade
+  const dizzyToMadRef = useRef(0)
+  // Mad outro timer: 3.0s after mad loop ends
+  const madOutroTimerRef = useRef(0)
+
+  // Morphable eye geometry states
+  const eyeMorphRxRef = useRef(5.5)
+  const eyeMorphRyTopRef = useRef(5.5)
+  const eyeMorphRyBotRef = useRef(5.5)
+  const eyeMorphRotRef = useRef(0)
+  const eyeMorphIsStrokeRef = useRef(0)
+  const eyeMorphYOffRef = useRef(0)
+  const eyeMorphPXRef = useRef(0)
+  const eyeMorphPYRef = useRef(0)
+
+  useEffect(() => {
+    draggingStateRef.current = isDragging
+  }, [isDragging])
+
+  useEffect(() => {
+    processingStateRef.current = isProcessing
+  }, [isProcessing])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -173,6 +258,9 @@ export function BlobCanvas() {
     if (!ctx) return
 
     let raf: number
+    let lastFrameTime = 0
+    let hueSyncAccumulator = 0
+    let cursorPollInFlight = false
     const w = 140
     const h = 160
     const cx = w / 2
@@ -180,6 +268,7 @@ export function BlobCanvas() {
 
     const tents = makeTentacles()
     const organs = makeOrgans()
+    nextBlinkThresholdRef.current = 8 + Math.random() * 8
 
     // ── Expression tracking ────────────────────────────────────────
     let dragStartTime = 0
@@ -205,7 +294,10 @@ export function BlobCanvas() {
 
     // Poll system cursor at ~60fps
     const cursorInterval = setInterval(() => {
+      if (cursorPollInFlight) return
+      cursorPollInFlight = true
       Promise.all([getCursorPosition(), getWindowPosition()]).then(([cursor, wp]) => {
+        const dragging = draggingStateRef.current
         blobScreenX = wp.x + cx
         blobScreenY = wp.y + cy
 
@@ -233,7 +325,7 @@ export function BlobCanvas() {
           }
 
           // Smooth drag velocity for broom-trail (only care when dragging)
-          if (isDragging) {
+          if (dragging) {
             dragVelRef.current.x = dragVelRef.current.x * 0.6 + dmx * 0.4
             dragVelRef.current.y = dragVelRef.current.y * 0.6 + dmy * 0.4
           } else {
@@ -243,11 +335,8 @@ export function BlobCanvas() {
           }
 
           // Petting detection: hover over it left and right wiggles
-          // Only checks if not currently dragging, close to the blob, and rage sequence blocks are clear
-          const inRageSequence = postDragDizzyRef.current > 0
-            || postDragPauseRef.current > 0
-            || madCooldownRef.current > 0
-          if (!isDragging && dist < 85 && !inRageSequence && madRecoveryRef.current <= 0) {
+          // Only checks if not currently dragging, close to the blob, and rage sequence is inactive
+          if (!dragging && dist < 85 && !ragSequenceActiveRef.current && madRecoveryRef.current <= 0) {
             if (Math.abs(dmx) > 1.0) {
               const currentSign = dmx > 0 ? 1 : -1
               if (lastSignRef.current !== currentSign) {
@@ -269,25 +358,36 @@ export function BlobCanvas() {
         if (petScoreRef.current >= 4) {
           petScoreRef.current = 0
           lastSignRef.current = 0
-          happyCooldownRef.current = 60 + Math.random() * 60 // 60-120 seconds of pure joy
+          const happyDuration = 60 + Math.random() * 60
+          happyCooldownRef.current = happyDuration
+          happyTotalRef.current = happyDuration
         }
 
         lastCursorX = cursor.x
         lastCursorY = cursor.y
         lastMouseTime = now
         // Sleep mode activation fix: only update lastInteractionTime on actual mouse movement or drag
-        if (moved || isDragging) {
+        if (moved || dragging) {
           lastInteractionTime = now
         }
 
         // Is mouse near blob?
         mouseNearBlob = dist < 120
-      }).catch(() => {})
+      }).catch(() => {}).finally(() => {
+        cursorPollInFlight = false
+      })
     }, 16)
 
     const draw = (time: number) => {
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
       ctx.clearRect(0, 0, w, h)
       const t = time / 1000
+      const dt = lastFrameTime === 0
+        ? FRAME_SECONDS
+        : clamp((time - lastFrameTime) / 1000, 0.001, MAX_FRAME_SECONDS)
+      lastFrameTime = time
+      const dragging = draggingStateRef.current
+      const processing = processingStateRef.current
 
       // ── Expression determination ─────────────────────────────────
       const now = Date.now()
@@ -297,65 +397,96 @@ export function BlobCanvas() {
       // (do not clear until after checking drag-release staged transitions)
       const dragMs = dragStartTime === 0 ? 0 : now - dragStartTime
 
-      // Detect drag-release → staged transition: 2s decelerating dizzy (if was dizzy) → 0.5s pause → 7-9s mad
-      if (prevDraggingRef.current && !isDragging) {
-        if (dragMs > 2500) {
-          postDragDizzyRef.current = 2.0   // 2 seconds of slow-mo recovery
+      // Detect drag-release → locked rage sequence
+      if (prevDraggingRef.current && !dragging) {
+        if (dragMs > RAGE_HOLD_MS || ragSequenceActiveRef.current) {
+          postDragDizzyRef.current = RAGE_DIZZY_SECONDS
+          dizzyToMadRef.current = 0
+          madCooldownRef.current = 0
+          madOutroTimerRef.current = 0
+          ragSequenceActiveRef.current = true
         } else {
           postDragDizzyRef.current = 0
+          dizzyToMadRef.current = 0
+          madCooldownRef.current = 0
+          madOutroTimerRef.current = 0
+          ragSequenceActiveRef.current = false  // short drag: no rage
         }
-        postDragPauseRef.current = 0.5     // 0.5s calm pause before mad
-        madCooldownRef.current = 0
-        madTotalRef.current = 0
         happyCooldownRef.current = 0       // cancel happy on drag release
+        happyTotalRef.current = 0
       }
-      prevDraggingRef.current = isDragging
+      prevDraggingRef.current = dragging
 
       // Start or stop drag timer
-      if (isDragging) {
+      if (dragging) {
         if (dragStartTime === 0) {
           dragStartTime = now
           happyCooldownRef.current = 0 // cancel happy if dragged
+          happyTotalRef.current = 0
         }
       } else {
         dragStartTime = 0
       }
 
+      // ── Expression state machine ─────────────────────────────────
       let expression: Expression = 'idle'
+      let ragePhase: 'none' | 'dizzyBuffer' | 'dizzyToMad' | 'madLoop' | 'madOutro' = 'none'
 
-      if (isProcessing) {
+      if (processing) {
         expression = 'idle'
-      } else if (isDragging) {
-        if (dragMs > 2500) expression = 'dizzy'
-        else expression = 'annoyed'
-      } else if (postDragDizzyRef.current > 0) {
-        // Phase 1: dizziness decelerates over 2 seconds
-        postDragDizzyRef.current -= 1 / 60
-        if (postDragDizzyRef.current <= 0) {
-          postDragDizzyRef.current = 0
+      } else if (dragging) {
+        if (dragMs > RAGE_HOLD_MS) {
+          expression = 'dizzy'
+          ragSequenceActiveRef.current = true  // LOCK the rage sequence
+        } else {
+          expression = 'annoyed'
         }
-        expression = 'dizzy'
-      } else if (postDragPauseRef.current > 0) {
-        // Phase 2: brief calm before rage kicks in
-        postDragPauseRef.current -= 1 / 60
-        if (postDragPauseRef.current <= 0) {
-          postDragPauseRef.current = 0
-          const dur = 7 + Math.random() * 2  // 7–9s (2s longer)
-          madCooldownRef.current = dur
-          madTotalRef.current = dur
+      } else if (ragSequenceActiveRef.current) {
+        if (postDragDizzyRef.current > 0) {
+          ragePhase = 'dizzyBuffer'
+          expression = 'dizzy'
+          postDragDizzyRef.current = tickTimer(postDragDizzyRef.current, dt)
+          if (postDragDizzyRef.current <= 0) {
+            postDragDizzyRef.current = 0
+            dizzyToMadRef.current = RAGE_MORPH_SECONDS
+          }
+        } else if (dizzyToMadRef.current > 0) {
+          ragePhase = 'dizzyToMad'
+          expression = 'mad'
+          dizzyToMadRef.current = tickTimer(dizzyToMadRef.current, dt)
+          if (dizzyToMadRef.current <= 0) {
+            dizzyToMadRef.current = 0
+            const dur = RAGE_LOOP_MIN_SECONDS + Math.random() * RAGE_LOOP_VARIANCE_SECONDS
+            madCooldownRef.current = dur
+          }
+        } else if (madCooldownRef.current > 0) {
+          ragePhase = 'madLoop'
+          expression = 'mad'
+          madCooldownRef.current = tickTimer(madCooldownRef.current, dt)
+          if (madCooldownRef.current <= 0) {
+            madCooldownRef.current = 0
+            madOutroTimerRef.current = RAGE_OUTRO_SECONDS
+          }
+        } else if (madOutroTimerRef.current > 0) {
+          ragePhase = 'madOutro'
+          expression = 'mad'
+          madOutroTimerRef.current = tickTimer(madOutroTimerRef.current, dt)
+          if (madOutroTimerRef.current <= 0) {
+            madOutroTimerRef.current = 0
+            ragSequenceActiveRef.current = false  // UNLOCK — normal mode resumes
+            madRecoveryRef.current = 30
+          }
+        } else {
+          // Safety: should not reach here, but unlock just in case
+          ragSequenceActiveRef.current = false
         }
-        expression = 'idle'
-      } else if (madCooldownRef.current > 0) {
-        madCooldownRef.current -= 1 / 60
-        // When mad phase fully ends, set a 30s recovery block so happy can't follow rage
-        if (madCooldownRef.current <= 0) {
-          madRecoveryRef.current = 30
-        }
-        expression = 'mad'
       } else if (happyCooldownRef.current > 0) {
-        happyCooldownRef.current -= 1 / 60
+        happyCooldownRef.current = tickTimer(happyCooldownRef.current, dt)
+        if (happyCooldownRef.current <= 0) {
+          happyTotalRef.current = 0
+        }
         expression = 'happy'
-      } else if (idleMs > 8000) {
+      } else if (idleMs > SLEEP_IDLE_MS) {
         expression = 'sleepy'
       } else if (mouseSpeed > 800 && mouseNearBlob) {
         expression = 'surprised'
@@ -363,49 +494,140 @@ export function BlobCanvas() {
         expression = 'shy'
       }
 
-      // Decay the post-mad recovery timer
-      if (madRecoveryRef.current > 0) madRecoveryRef.current -= 1 / 60
+      // ── Sleep choreography: 5-second intro + 3-second outro ────
+      let sleepProgress = 0
+      const canSleep = !processing
+        && !dragging
+        && !ragSequenceActiveRef.current
+        && happyCooldownRef.current <= 0
+        && !mouseNearBlob
+      const sleepBlockedByPriority = processing
+        || dragging
+        || ragSequenceActiveRef.current
+        || happyCooldownRef.current > 0
+      if (sleepBlockedByPriority) {
+        sleepTransitionRef.current = 0
+        sleepOutroRef.current = 0
+      }
+      if (canSleep && idleMs > SLEEP_IDLE_MS && sleepTransitionRef.current < SLEEP_INTRO_SECONDS) {
+        sleepTransitionRef.current = Math.min(SLEEP_INTRO_SECONDS, sleepTransitionRef.current + dt)
+        expression = 'idle'  // keep idle visuals during intro choreography
+      }
+      if (sleepTransitionRef.current >= SLEEP_INTRO_SECONDS) {
+        expression = 'sleepy'
+        sleepProgress = 1
+      } else if (sleepTransitionRef.current > 0) {
+        sleepProgress = sleepTransitionRef.current / SLEEP_INTRO_SECONDS
+      }
+      // Reset sleep transition on any user interaction → start 3s outro
+      if ((!canSleep || idleMs < SLEEP_IDLE_MS) && sleepTransitionRef.current > 0) {
+        sleepTransitionRef.current = Math.max(0, sleepTransitionRef.current - dt * (SLEEP_INTRO_SECONDS / SLEEP_OUTRO_SECONDS))
+        sleepOutroRef.current = Math.min(SLEEP_OUTRO_SECONDS, sleepOutroRef.current + dt)
+        expression = 'sleepy'  // keep sleepy visuals during outro choreography
+      } else if (sleepOutroRef.current > 0 && sleepTransitionRef.current <= 0) {
+        sleepOutroRef.current = Math.max(0, sleepOutroRef.current - dt)
+      }
+      const sleepOutro = sleepOutroRef.current / SLEEP_OUTRO_SECONDS
 
-      // Happy: rare (0.00001/frame ≈ once per ~138 min avg, 5x rarer), long (60-120s)
-      // Blocked during and for 30s after any rage sequence
-      const inRageSequence = postDragDizzyRef.current > 0
-        || postDragPauseRef.current > 0
-        || madCooldownRef.current > 0
+      const dizzyBuffer = ragePhase === 'dizzyBuffer'
+      const inTransition = ragePhase === 'dizzyToMad'
+      const inMadOutro = ragePhase === 'madOutro'
+      const dizzyToMadProgress = inTransition
+        ? 1 - dizzyToMadRef.current / RAGE_MORPH_SECONDS
+        : (ragePhase === 'madLoop' || ragePhase === 'madOutro' ? 1 : 0)
+      const madVisualStrength = inTransition
+        ? easeOutCubic(dizzyToMadProgress)
+        : ragePhase === 'madLoop'
+          ? 1
+          : inMadOutro
+            ? madOutroTimerRef.current / RAGE_OUTRO_SECONDS
+            : 0
+
+      // Update happyAlpha for smooth mouth transitions
+      const happyAlphaTarget = expression === 'happy' ? 1 : 0
+      happyAlphaRef.current += (happyAlphaTarget - happyAlphaRef.current) * frameLerp(0.35, dt)
+      const happyAlpha = happyAlphaRef.current
+
+      // Decay the post-mad recovery timer
+      if (madRecoveryRef.current > 0) madRecoveryRef.current = tickTimer(madRecoveryRef.current, dt)
+
+      // Happy: rare, long (60-120s). Blocked during rage sequence.
       if (expression === 'idle'
-        && !isDragging
-        && !isProcessing
-        && !inRageSequence
+        && !dragging
+        && !processing
+        && !ragSequenceActiveRef.current
         && madRecoveryRef.current <= 0
         && happyCooldownRef.current <= 0
         && Math.random() < 0.00001) {
-        happyCooldownRef.current = 60 + Math.random() * 60  // 60-120s
+        const happyDuration = 60 + Math.random() * 60
+        happyCooldownRef.current = happyDuration
+        happyTotalRef.current = happyDuration
         expression = 'happy'
       }
 
-      // ── Target Colors for each mode ──────────────────────────────
-      let target1 = { h: 180, s: 70, l: 65 }
-      let target2 = { h: 230, s: 60, l: 50 }
+      // ── Transition choreography ─────────────────────────────────
+      const prevExpressionSaved = prevExpressionRef.current  // save before overwriting
+      if (expression !== prevExpressionSaved) {
+        transitionTimerRef.current = 0
+        popRef.current = 0.12  // small scale pulse on mode change
+      }
+      prevExpressionRef.current = expression
+      if (transitionTimerRef.current < 1) {
+        transitionTimerRef.current = Math.min(1, transitionTimerRef.current + dt / MODE_TRANSITION_SECONDS)
+      }
+      // Pop decay
+      if (popRef.current > 0.001) {
+        popRef.current *= Math.pow(0.85, dt / FRAME_SECONDS)
+      } else {
+        popRef.current = 0
+      }
+      const transitionBlend = transitionTimerRef.current  // 0→1 over ~0.4s
 
-      if (isDragging) {
-        // Dragged mode
+      // ── Target Colors for each mode (blended by intro/outro) ───
+      const idle1 = { h: 180, s: 70, l: 65 }
+      const idle2 = { h: 230, s: 60, l: 50 }
+      let target1: HslColor
+      let target2: HslColor
+
+      if (dragging || dizzyBuffer) {
+        // Dragged/dizzy-buffer mode — LOCKED, no flash on release
         target1 = { h: 195, s: 75, l: 65 }
         target2 = { h: 270, s: 70, l: 50 }
+      } else if (inTransition) {
+        // Dizzy→Mad transition: morph purple→red over 1s (using hue 360 to force purple transition path)
+        target1 = mixHsl({ h: 195, s: 75, l: 65 }, { h: 360, s: 85, l: 58 }, madVisualStrength)
+        target2 = mixHsl({ h: 270, s: 70, l: 50 }, { h: 335, s: 82, l: 42 }, madVisualStrength)
       } else if (expression === 'mad') {
-        // Angry mode
-        target1 = { h: 0, s: 80, l: 60 }
-        target2 = { h: 300, s: 70, l: 45 }
+        // Mad loop + outro — blend with intro/outro (using hue 360 to force purple transition path)
+        const madT1 = { h: 360, s: 85, l: 58 }
+        const madT2 = { h: 335, s: 82, l: 42 }
+        target1 = mixHsl(idle1, madT1, madVisualStrength)
+        target2 = mixHsl(idle2, madT2, madVisualStrength)
       } else if (expression === 'happy') {
-        // Happy mode: Sunburst Yellow-Orange
-        target1 = { h: 55, s: 95, l: 62 }
-        target2 = { h: 22, s: 95, l: 52 }
+        // Happy mode — blend with happyAlpha
+        const hapT1 = { h: 145, s: 75, l: 55 }
+        const hapT2 = { h: 160, s: 65, l: 40 }
+        target1 = mixHsl(idle1, hapT1, happyAlpha)
+        target2 = mixHsl(idle2, hapT2, happyAlpha)
       } else if (expression === 'sleepy') {
-        // Idle/Sleep mode
-        target1 = { h: 245, s: 50, l: 45 }
-        target2 = { h: 285, s: 45, l: 35 }
+        // Sleep mode — blend with intro/outro
+        const sleepColorBlend = sleepProgress > 0 ? sleepProgress : (1 - sleepOutro)
+        const slpT1 = { h: 245, s: 50, l: 45 }
+        const slpT2 = { h: 285, s: 45, l: 35 }
+        target1 = mixHsl(idle1, slpT1, sleepColorBlend)
+        target2 = mixHsl(idle2, slpT2, sleepColorBlend)
       } else {
-        // Normal mode (idle, annoyed, surprised, shy, processing)
-        target1 = { h: 180, s: 70, l: 65 }
-        target2 = { h: 230, s: 60, l: 50 }
+        // Normal mode
+        target1 = idle1
+        target2 = idle2
+      }
+
+      // Sleep intro choreography: blend colors from idle → purple during intro
+      if (sleepProgress > 0 && sleepProgress < 1 && expression !== 'sleepy') {
+        const sleepyTarget1 = { h: 245, s: 50, l: 45 }
+        const sleepyTarget2 = { h: 285, s: 45, l: 35 }
+        target1 = mixHsl(target1, sleepyTarget1, sleepProgress)
+        target2 = mixHsl(target2, sleepyTarget2, sleepProgress)
       }
 
       // Add dynamic breathing to saturation and lightness
@@ -425,8 +647,7 @@ export function BlobCanvas() {
       const c1 = color1Ref.current
       const c2 = color2Ref.current
 
-      // Lerp speed: 0.025 for smooth transitions (~0.8s to fully switch)
-      const lerpSpd = 0.025
+      const lerpSpd = frameLerp(0.12, dt)
       c1.h = lerpAngle(c1.h, target1.h, lerpSpd)
       c1.s = lerpValue(c1.s, target1.s, lerpSpd)
       c1.l = lerpValue(c1.l, target1.l, lerpSpd)
@@ -438,34 +659,38 @@ export function BlobCanvas() {
       // hue is computed dynamically from c1.h
       const hue = c1.h
 
-      // Dizzy stars fade out over 2 seconds of slow-mo recovery
-      const dizzyAlpha = isDragging ? 1 : Math.min(1, postDragDizzyRef.current / 1.5)
+      // Dizzy stars stay full after release, then fade through the rage morph.
+      const dizzyAlpha = dragging || dizzyBuffer
+        ? 1
+        : inTransition
+          ? 1 - easeOutCubic(dizzyToMadProgress)
+          : 0
 
       // Compute spin velocity and progress
       let spinVel = 0
       let dizzyProgress = 0
-      if (expression === 'dizzy') {
-        if (isDragging) {
+      if (expression === 'dizzy' || inTransition) {
+        if (dragging) {
           spinVel = 4.0
           dizzyProgress = 1.0
         } else if (postDragDizzyRef.current > 0) {
-          dizzyProgress = postDragDizzyRef.current / 2.0  // 1.0 -> 0.0
-          spinVel = 4.0 * dizzyProgress
+          dizzyProgress = 1.0
+          spinVel = 3.2
+        } else if (inTransition) {
+          dizzyProgress = 1 - dizzyToMadProgress
+          spinVel = 3.2 * dizzyProgress
         }
       }
-      dizzySpinAngleRef.current += spinVel * (1 / 60)
+      dizzySpinAngleRef.current += spinVel * dt
 
-      // Update madAlpha for gradual eye transitions
-      if (expression === 'mad') {
-        madAlphaRef.current = Math.min(1, madAlphaRef.current + 1 / 30) // fade-in
-      } else {
-        madAlphaRef.current = Math.max(0, madAlphaRef.current - 1 / 90) // fade-out (1.5s)
-      }
+      const madAlphaTarget = expression === 'mad' ? madVisualStrength : 0
+      madAlphaRef.current += (madAlphaTarget - madAlphaRef.current) * frameLerp(0.35, dt)
+      const madAlpha = madAlphaRef.current
 
-      if (expression === 'dizzy') {
-        dizzyWobble = Math.sin(t * 6) * 3
+      if (expression === 'dizzy' || inTransition) {
+        dizzyWobble = Math.sin(t * 6) * 3 * Math.max(0.25, dizzyAlpha)
         // Only spawn new stars during active drag dizziness, not during fade-out
-        if (isDragging && dizzyStars.length < 5 && Math.random() < 0.05) {
+        if (dragging && dizzyStars.length < 5 && Math.random() < 0.05) {
           dizzyStars.push({
             angle: Math.random() * Math.PI * 2,
             dist: 14 + Math.random() * 6,
@@ -474,10 +699,10 @@ export function BlobCanvas() {
         }
         for (const star of dizzyStars) {
           // Stars decelerate orbit during slow-mo
-          star.angle += star.speed * (1 / 60) * dizzyProgress
+          star.angle += star.speed * dt * dizzyProgress
         }
         // Gradually drain stars during post-drag fade so they disappear naturally
-        if (!isDragging && Math.random() < 0.04 && dizzyStars.length > 0) {
+        if (!dragging && Math.random() < 2.4 * dt && dizzyStars.length > 0) {
           dizzyStars.pop()
         }
       } else {
@@ -488,19 +713,19 @@ export function BlobCanvas() {
       // ── Pulse ─────────────────────────────────────────────────────
       const pp = t * (Math.PI * 2 / (BLOB.BREATH_PERIOD_MS / 1000))
       const pulse = Math.sin(pp)
-      const sx = 1 + pulse * 0.06 + dizzyWobble * 0.01
-      const sy = 1 - pulse * 0.08
-      const pm = isProcessing ? 2.0 : 1.0
+      const sx = 1 + pulse * 0.06 + dizzyWobble * 0.01 + popRef.current
+      const sy = 1 - pulse * 0.08 - popRef.current * 0.5
+      const pm = processing ? 2.0 : 1.0
 
       // ── Eye tracking ──────────────────────────────────────────────
       const ep = eyePosRef.current
       const et = eyeTargetRef.current
 
-      // Dizzy eyes spin instead of tracking (decelerates to stop during slow-mo)
+      // Dizzy eyes spin instead of tracking (decelerates to stop during slow-mo + transition)
       if (expression === 'dizzy') {
         const spinAngle = dizzySpinAngleRef.current
-        const progress = postDragDizzyRef.current > 0 ? (postDragDizzyRef.current / 2.0) : 1.0
-        const orbitRadius = 2.5 * progress
+        const orbitProgress = dragging || dizzyBuffer ? 1 : (inTransition ? 1 - dizzyToMadProgress : 0)
+        const orbitRadius = 2.5 * orbitProgress
         eyeTargetRef.current = {
           x: Math.cos(spinAngle) * orbitRadius,
           y: Math.sin(spinAngle) * orbitRadius,
@@ -514,12 +739,13 @@ export function BlobCanvas() {
         et.y *= 0.6
       }
 
-      ep.x += (et.x - ep.x) * 0.08
-      ep.y += (et.y - ep.y) * 0.08
+      const eyeFollow = frameLerp(0.08, dt)
+      ep.x += (et.x - ep.x) * eyeFollow
+      ep.y += (et.y - ep.y) * eyeFollow
 
       // Blink: 8-16s intervals, 0.4s animation (slow and natural)
-      if (!isDragging) {
-        blinkTimerRef.current += 1 / 60
+      if (!dragging) {
+        blinkTimerRef.current += dt
         if (!isBlinkingRef.current && blinkTimerRef.current >= nextBlinkThresholdRef.current) {
           isBlinkingRef.current = true
           blinkPhaseRef.current = 0
@@ -532,7 +758,7 @@ export function BlobCanvas() {
         blinkTimerRef.current = 0
       }
       if (isBlinkingRef.current) {
-        blinkPhaseRef.current += 1 / 60
+        blinkPhaseRef.current += dt
         if (blinkPhaseRef.current > 0.4) {  // 0.4s duration — noticeably slow
           isBlinkingRef.current = false
           blinkPhaseRef.current = 0
@@ -544,26 +770,105 @@ export function BlobCanvas() {
 
       // Eye squint — compute target then lerp current toward it (smooth, not instant)
       let squintTarget = 0
-      if (isProcessing) squintTarget = 0.15
+      if (processing) squintTarget = 0.15
       else if (expression === 'annoyed') squintTarget = 0.12
-      else if (expression === 'mad') squintTarget = 0.45
+      else if (expression === 'mad') squintTarget = 0.18 + 0.27 * madVisualStrength
       else if (expression === 'sleepy') squintTarget = 0.35
       else if (expression === 'shy') squintTarget = 0.05
-      squintCurrentRef.current += (squintTarget - squintCurrentRef.current) * 0.035
+      // Sleep choreography: staged squint override (5s intro)
+      if (sleepProgress > 0 && sleepProgress < 1) {
+        // Stage 1 (0-0.33): eyes half-closed; Stage 2+ (0.33-1): fully closed
+        const stageSquint = sleepProgress < 0.33
+          ? sleepProgress / 0.33 * 0.65    // 0 → 0.65
+          : 0.65 + (sleepProgress - 0.33) / 0.67 * 0.35  // 0.65 → 1.0
+        squintTarget = Math.max(squintTarget, stageSquint)
+      } else if (sleepProgress >= 1) {
+        squintTarget = Math.max(squintTarget, 1.0)  // fully closed when asleep
+      } else if (sleepOutro > 0) {
+        // Sleep outro: eyes gradually reopen (3s wake-up)
+        const reopenSquint = sleepOutro  // 1→0: starts closed, opens fully
+        squintTarget = Math.max(squintTarget, reopenSquint)
+      }
+      squintCurrentRef.current += (squintTarget - squintCurrentRef.current) * frameLerp(0.15, dt)
       const squint = squintCurrentRef.current
 
-      // Happy eyes = ^_^ (no blink, just curved)
-      const isHappyEyes = expression === 'happy'
-      // Surprised = extra wide
-      const isSurprised = expression === 'surprised'
-      const isSleepy = expression === 'sleepy'
+      // ── Target eye morph parameters based on expression ────────────────
+      const eyeRadius = 5.5
+      let targetRx = eyeRadius
+      let targetRyTop = eyeRadius * (1 - squint) * (1 - blinkAmount)
+      let targetRyBot = eyeRadius * (1 - squint) * (1 - blinkAmount)
+      let targetRot = 0
+      let targetIsStroke = 0
+      let targetYOff = 0
+      let targetPX = ep.x * 1.2
+      let targetPY = ep.y * 1.2
+
+      if (expression === 'mad') {
+        const madIntensity = madAlpha
+        const madTilt = 0.35 * madIntensity
+        targetRx = eyeRadius * 0.85
+        targetRyTop = 0
+        targetRyBot = eyeRadius * 0.85 * madIntensity
+        targetRot = madTilt
+        targetIsStroke = 0
+        targetYOff = 0
+        targetPX = 0
+        targetPY = 0
+      } else if (expression === 'happy') {
+        targetRx = eyeRadius * 0.7
+        targetRyTop = -eyeRadius * 0.45
+        targetRyBot = eyeRadius * 0.45
+        targetRot = 0
+        targetIsStroke = 1
+        targetYOff = 1
+        targetPX = 0
+        targetPY = 0
+      } else if (expression === 'sleepy') {
+        const sleepyIntensity = (sleepProgress > 0 ? sleepProgress : (1 - sleepOutro))
+        targetRx = eyeRadius * 0.75
+        targetRyTop = eyeRadius * 0.45 * sleepyIntensity
+        targetRyBot = -eyeRadius * 0.45 * sleepyIntensity
+        targetRot = 0
+        targetIsStroke = 1
+        targetYOff = -1
+        targetPX = 0
+        targetPY = 0
+      } else if (expression === 'surprised') {
+        targetRx = eyeRadius * 1.2
+        targetRyTop = eyeRadius * 1.2 * (1 - squint) * (1 - blinkAmount)
+        targetRyBot = eyeRadius * 1.2 * (1 - squint) * (1 - blinkAmount)
+        targetRot = 0
+        targetIsStroke = 0
+        targetYOff = 0
+      }
+
+      // Smoothly morph values
+      const morphSpd = frameLerp(0.18, dt)
+      eyeMorphRxRef.current += (targetRx - eyeMorphRxRef.current) * morphSpd
+      eyeMorphRyTopRef.current += (targetRyTop - eyeMorphRyTopRef.current) * morphSpd
+      eyeMorphRyBotRef.current += (targetRyBot - eyeMorphRyBotRef.current) * morphSpd
+      eyeMorphRotRef.current += (targetRot - eyeMorphRotRef.current) * morphSpd
+      eyeMorphIsStrokeRef.current += (targetIsStroke - eyeMorphIsStrokeRef.current) * morphSpd
+      eyeMorphYOffRef.current += (targetYOff - eyeMorphYOffRef.current) * morphSpd
+      eyeMorphPXRef.current += (targetPX - eyeMorphPXRef.current) * morphSpd
+      eyeMorphPYRef.current += (targetPY - eyeMorphPYRef.current) * morphSpd
+
+      const mRx = eyeMorphRxRef.current
+      const mRyTop = eyeMorphRyTopRef.current
+      const mRyBot = eyeMorphRyBotRef.current
+      const mRot = eyeMorphRotRef.current
+      const mIsStroke = eyeMorphIsStrokeRef.current
+      const mYOff = eyeMorphYOffRef.current
+      const mPX = eyeMorphPXRef.current
+      const mPY = eyeMorphPYRef.current
 
       // ── Tentacle physics: ocean jellyfish drag ───────────────────────────────
       // dragBlend eases in/out so there's never an instant physics switch
-      const blendTarget = (isDragging && expression !== 'dizzy') ? 1 : 0
+      const blendTarget = dragging ? 1 : 0
       dragBlendRef.current += (blendTarget - dragBlendRef.current)
-        * (blendTarget > dragBlendRef.current ? 0.07 : 0.035)
+        * frameLerp(blendTarget > dragBlendRef.current ? 0.18 : 0.12, dt)
       const dragBlend = dragBlendRef.current
+      const releaseBlend = Math.abs(blendTarget - dragBlend)
 
       // Compute unified lean direction: ALL tentacles lean TOGETHER in the
       // direction OPPOSITE to motion, max 15° — like a jellyfish in the ocean
@@ -583,10 +888,9 @@ export function BlobCanvas() {
         ten.pts[0].y = ay
 
         // During drag: reduce wave amplitude so legs don't flail
-        const tentAmp = expression === 'dizzy'
-          ? ten.amp * 2.0
-          : ten.amp * (1 - dragBlend * 0.75)
-        const tentSpeed = expression === 'dizzy' ? ten.speed * 1.8 : ten.speed
+        const rageMotion = expression === 'dizzy' || inTransition
+        const tentAmp = ten.amp * (1 - dragBlend * 0.62) + (rageMotion ? 0.35 * dizzyAlpha : 0)
+        const tentSpeed = ten.speed * (rageMotion ? 1.25 : 1)
 
         for (let i = 1; i < ten.pts.length; i++) {
           const p = ten.pts[i]
@@ -609,12 +913,13 @@ export function BlobCanvas() {
           const ty = normalTy + (dragTy - normalTy) * dragBlend
 
           // Blended spring: stiffer at rest, softer during drag for fluid lag
-          const springK = 0.038 - 0.022 * dragBlend
+          const springK = 0.04 - 0.018 * dragBlend
 
           p.vx += (tx - p.x) * springK
           p.vy += (ty - p.y) * springK
-          p.vx *= ten.damp
-          p.vy *= ten.damp
+          const damping = clamp(ten.damp - releaseBlend * 0.08, 0.82, 0.96)
+          p.vx = clamp(p.vx * damping, -3.2, 3.2)
+          p.vy = clamp(p.vy * damping, -3.2, 3.2)
           p.x += p.vx
           p.y += p.vy
         }
@@ -721,7 +1026,7 @@ export function BlobCanvas() {
         const o = organs[i]
         const pos = organPos[i]
         const op = Math.sin(t * o.speed + o.phase) * 0.3 + 0.7
-        const ob = o.bright * op * (isProcessing ? 1.5 : 1.0)
+        const ob = o.bright * op * (processing ? 1.5 : 1.0)
 
         // Halo (stronger)
         const ohG = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, o.size * 2.8)
@@ -759,115 +1064,120 @@ export function BlobCanvas() {
       ctx.stroke()
 
       // ══════════════════════════════════════════════════════════════
-      // LAYER 6 — EYES
+      // LAYER 5.5 — Thin glowing edge (neon outline)
+      // ══════════════════════════════════════════════════════════════
+      // Bright core stroke
+      traceBell(ctx, cx, cy, sx, sy, t)
+      const edgeG = ctx.createLinearGradient(cx - BELL_W, cy - BELL_H, cx + BELL_W, cy + BELL_H * 0.3)
+      edgeG.addColorStop(0, `hsla(${c1.h}, ${c1.s - 10}%, ${c1.l + 20}%, 0.45)`)
+      edgeG.addColorStop(0.5, `hsla(${(c1.h + c2.h) / 2}, ${c1.s}%, ${c1.l + 15}%, 0.35)`)
+      edgeG.addColorStop(1, `hsla(${c2.h}, ${c2.s - 10}%, ${c2.l + 15}%, 0.25)`)
+      ctx.strokeStyle = edgeG
+      ctx.lineWidth = 0.8
+      ctx.stroke()
+
+      // Outer glow aura (wider, fainter)
+      traceBell(ctx, cx, cy, sx, sy, t)
+      ctx.strokeStyle = `hsla(${hue}, ${c1.s}%, ${c1.l + 10}%, 0.08)`
+      ctx.lineWidth = 3.5
+      ctx.stroke()
+
+      // ══════════════════════════════════════════════════════════════
+      // LAYER 6 — EYES (morphing between expressions)
       // ══════════════════════════════════════════════════════════════
       const eyeSpacing = 9
       const eyeY = cy - 2
-      const eyeRadius = 5.5
-      const eyeH = eyeRadius * (1 - squint) * (1 - blinkAmount)
-      const eyeW = eyeRadius * (isSurprised ? 1.2 : 1)
-
-      // Pre-compute mad alpha for use in both eyes and overlay
-      const madAlpha = madAlphaRef.current
-      const isMadEyes = madAlpha > 0.01
 
       for (let side = -1; side <= 1; side += 2) {
         const ex = cx + side * eyeSpacing * sx
-        const ey = eyeY
+        const ey = eyeY + mYOff
 
-        if (isMadEyes) {
-          // Rage eyes: upside down full closed half circle, tilted (flat top, curved bottom, no eyebrows)
-          // Left eye (side=-1): rotate CW — inner end dips → /
-          // Right eye (side=+1): rotate CCW — inner end dips → \
-          // Together: / \ = angry look
+        ctx.save()
+        ctx.translate(ex + mPX, ey + mPY)
+        ctx.rotate(-side * mRot)
+
+        ctx.beginPath()
+        ctx.moveTo(-mRx, 0)
+        ctx.quadraticCurveTo(0, -2 * mRyTop, mRx, 0)
+        ctx.quadraticCurveTo(0, 2 * mRyBot, -mRx, 0)
+
+        // Draw filled base (normal, mad, surprised)
+        if (mIsStroke < 0.99) {
+          const baseAlpha = 1 - mIsStroke
+          ctx.fillStyle = `hsla(0, 0%, 5%, ${0.95 * baseAlpha})`
+          ctx.fill()
+
+          // Draw the pupil details & shines ONLY for the filled part (normal eyes)
+          // We fade their opacity by baseAlpha so they disappear during the stroke morph
+          const normalAlpha = (1 - dragBlend * 0.85) * (1 - madAlpha) * baseAlpha
+          if (normalAlpha > 0.01) {
+            // Draw iris stroke
+            const irisR = mRx * 0.65
+            ctx.beginPath()
+            ctx.arc(0, 0, irisR, 0, Math.PI * 2)
+            ctx.strokeStyle = `hsla(${hue + 20}, 30%, 18%, ${0.35 * normalAlpha})`
+            ctx.lineWidth = 1.0
+            ctx.stroke()
+
+            // Highlight shines
+            const shX = 2
+            const shY = -2
+            const shG = ctx.createRadialGradient(shX, shY, 0, shX, shY, 2.2)
+            shG.addColorStop(0, `hsla(0, 0%, 100%, ${0.70 * (1 - blinkAmount) * normalAlpha})`)
+            shG.addColorStop(0.5, `hsla(0, 0%, 100%, ${0.25 * (1 - blinkAmount) * normalAlpha})`)
+            shG.addColorStop(1, `hsla(0, 0%, 100%, 0)`)
+            ctx.beginPath()
+            ctx.arc(shX, shY, 2.2, 0, Math.PI * 2)
+            ctx.fillStyle = shG
+            ctx.fill()
+
+            const sh2X = -1.5
+            const sh2Y = 1.5
+            ctx.beginPath()
+            ctx.arc(sh2X, sh2Y, 1.0, 0, Math.PI * 2)
+            ctx.fillStyle = `hsla(0, 0%, 100%, ${0.25 * (1 - blinkAmount) * normalAlpha})`
+            ctx.fill()
+          }
+        }
+
+        // Draw stroke line (happy, sleepy)
+        if (mIsStroke > 0.01) {
+          ctx.beginPath()
+          ctx.moveTo(-mRx, 0)
+          ctx.quadraticCurveTo(0, -2 * mRyTop, mRx, 0)
+          ctx.quadraticCurveTo(0, 2 * mRyBot, -mRx, 0)
+          ctx.strokeStyle = `hsla(0, 0%, 5%, ${0.90 * mIsStroke})`
+          ctx.lineWidth = 2.2
+          ctx.lineCap = 'round'
+          ctx.stroke()
+        }
+
+        ctx.restore()
+
+        // >< overlay fades in with dragBlend (only if not dizzy or mad)
+        if (dragBlend > 0.01 && expression !== 'dizzy' && expression !== 'mad') {
+          const arm = eyeRadius * 0.85
           ctx.save()
           ctx.translate(ex, ey)
-          ctx.rotate(-side * 0.35)  // inner end dips down
+          const tipX = -side * arm
+          ctx.strokeStyle = `hsla(0, 0%, 5%, ${0.92 * dragBlend})`
+          ctx.lineWidth = 2.4
+          ctx.lineCap = 'round'
+          ctx.lineJoin = 'round'
           ctx.beginPath()
-          ctx.arc(0, 0, eyeRadius * 0.85, 0, Math.PI)
-          ctx.fillStyle = `hsla(0, 0%, 5%, ${0.95 * madAlpha})`
-          ctx.fill()
+          ctx.moveTo(side * arm, -arm * 0.65)
+          ctx.lineTo(tipX, 0)
+          ctx.lineTo(side * arm, arm * 0.65)
+          ctx.stroke()
           ctx.restore()
-        } else if (isHappyEyes) {
-          ctx.beginPath()
-          ctx.arc(ex, ey + 1, eyeRadius * 0.7, Math.PI + 0.4, -0.4)
-          ctx.strokeStyle = `hsla(0, 0%, 5%, 0.90)`
-          ctx.lineWidth = 2.2
-          ctx.lineCap = 'round'
-          ctx.stroke()
-        } else if (isSleepy) {
-          // Closed sleeping eyes: a gentle curved line (like a smile / cup shape ︶)
-          ctx.beginPath()
-          ctx.arc(ex, ey - 1, eyeRadius * 0.75, 0.4, Math.PI - 0.4)
-          ctx.strokeStyle = `hsla(0, 0%, 5%, 0.85)`
-          ctx.lineWidth = 2.2
-          ctx.lineCap = 'round'
-          ctx.stroke()
-        } else {
-          // Normal eyes; fade out toward drag >< and toward mad arcs
-          const normalAlpha = (1 - dragBlend * 0.85) * (1 - madAlpha)
-
-          const trackX = ep.x * 1.2
-          const trackY = ep.y * 1.2
-          const pupilX = ex + trackX
-          const pupilY = ey + trackY
-
-          ctx.beginPath()
-          ctx.ellipse(pupilX, pupilY, eyeW, eyeH, 0, 0, Math.PI * 2)
-          ctx.fillStyle = `hsla(0, 0%, 3%, ${0.95 * normalAlpha})`
-          ctx.fill()
-
-          const irisX = ex + trackX * 0.7
-          const irisY = ey + trackY * 0.7
-          const irisR = eyeW * 0.65
-          ctx.beginPath()
-          ctx.arc(irisX, irisY, irisR, 0, Math.PI * 2)
-          ctx.strokeStyle = `hsla(${hue + 20}, 30%, 18%, ${0.35 * normalAlpha})`
-          ctx.lineWidth = 1.0
-          ctx.stroke()
-
-          const shX = pupilX + 2 - trackX * 0.2
-          const shY = pupilY - 2 - trackY * 0.2
-          const shG = ctx.createRadialGradient(shX, shY, 0, shX, shY, 2.2)
-          shG.addColorStop(0, `hsla(0, 0%, 100%, ${0.70 * (1 - blinkAmount) * normalAlpha})`)
-          shG.addColorStop(0.5, `hsla(0, 0%, 100%, ${0.25 * (1 - blinkAmount) * normalAlpha})`)
-          shG.addColorStop(1, `hsla(0, 0%, 100%, 0)`)
-          ctx.beginPath()
-          ctx.arc(shX, shY, 2.2, 0, Math.PI * 2)
-          ctx.fillStyle = shG
-          ctx.fill()
-
-          const sh2X = pupilX - 1.5 - trackX * 0.15
-          const sh2Y = pupilY + 1.5 - trackY * 0.15
-          ctx.beginPath()
-          ctx.arc(sh2X, sh2Y, 1.0, 0, Math.PI * 2)
-          ctx.fillStyle = `hsla(0, 0%, 100%, ${0.25 * (1 - blinkAmount) * normalAlpha})`
-          ctx.fill()
-
-          // >< overlay fades in with dragBlend
-          if (dragBlend > 0.01) {
-            const arm = eyeRadius * 0.85
-            ctx.save()
-            ctx.translate(ex, ey)
-            const tipX = -side * arm
-            ctx.strokeStyle = `hsla(0, 0%, 5%, ${0.92 * dragBlend})`
-            ctx.lineWidth = 2.4
-            ctx.lineCap = 'round'
-            ctx.lineJoin = 'round'
-            ctx.beginPath()
-            ctx.moveTo(side * arm, -arm * 0.65)
-            ctx.lineTo(tipX, 0)
-            ctx.lineTo(side * arm, arm * 0.65)
-            ctx.stroke()
-            ctx.restore()
-          }
         }
       }
 
       // ── Expression overlays ─────────────────────────────────────
 
-      // Mad: red glow + anger vein. Eyes are handled above (tilted arcs). NO eyebrows.
-      if (madAlpha > 0.01) {
+      // Mad: red glow + anger vein — intensity modulated by intro/outro (3s each)
+      const madOverlayAlpha = madAlpha
+      if (madOverlayAlpha > 0.01) {
         const madPulse = Math.sin(t * 8) * 0.15 + 0.85
 
         // Red tint glow over the bell
@@ -875,7 +1185,7 @@ export function BlobCanvas() {
         traceBell(ctx, cx, cy, sx, sy, t)
         ctx.clip()
         const madG = ctx.createRadialGradient(cx, cy, 0, cx, cy, BELL_W)
-        madG.addColorStop(0, `hsla(0, 80%, 50%, ${0.18 * madAlpha * madPulse})`)
+        madG.addColorStop(0, `hsla(0, 80%, 50%, ${0.18 * madOverlayAlpha * madPulse})`)
         madG.addColorStop(1, `hsla(0, 70%, 40%, 0)`)
         ctx.fillStyle = madG
         ctx.fillRect(0, 0, w, h)
@@ -884,8 +1194,8 @@ export function BlobCanvas() {
         // Anger vein 💢 — 4-bracket cross, top-right of head
         const vx = cx + 14
         const vy = cy - BELL_H * 0.85
-        const vs = 5.5 * madPulse
-        const va = madAlpha * (0.7 + Math.sin(t * 12) * 0.3)
+        const vs = 5.5 * madPulse * madOverlayAlpha
+        const va = madOverlayAlpha * (0.7 + Math.sin(t * 12) * 0.3)
         ctx.strokeStyle = `hsla(0, 90%, 55%, ${va})`
         ctx.lineWidth = 1.8
         ctx.lineCap = 'round'
@@ -945,9 +1255,9 @@ export function BlobCanvas() {
         }
       }
 
-      // Sleepy: floating zzz
+      // Sleepy: floating zzz — fade with intro/outro
       if (expression === 'sleepy') {
-        // Floating zzz
+        const zzzAlpha = sleepProgress > 0 ? sleepProgress : (1 - sleepOutro)
         const zzz = ['z', 'Z', 'z']
         for (let i = 0; i < 3; i++) {
           const zt = (t * 0.8 + i * 0.7) % 3
@@ -956,16 +1266,17 @@ export function BlobCanvas() {
           const za = Math.max(0, 1 - zt / 3)
           const zSize = 5 + i * 1.5
           ctx.font = `bold ${zSize}px sans-serif`
-          ctx.fillStyle = `hsla(${hue}, 40%, 80%, ${za * 0.6})`
+          ctx.fillStyle = `hsla(${hue}, 40%, 80%, ${za * 0.6 * zzzAlpha})`
           ctx.fillText(zzz[i], zx, zy)
         }
       }
 
       // Surprised: small "o" mouth
       if (expression === 'surprised') {
+        const surprisedAlpha = Math.min(1, transitionBlend * 2.5) * 0.6
         ctx.beginPath()
         ctx.arc(cx, cy + 8, 2.5, 0, Math.PI * 2)
-        ctx.fillStyle = `hsla(0, 0%, 5%, 0.6)`
+        ctx.fillStyle = `hsla(0, 0%, 5%, ${surprisedAlpha})`
         ctx.fill()
       }
 
@@ -974,14 +1285,67 @@ export function BlobCanvas() {
         for (let side = -1; side <= 1; side += 2) {
           const bx = cx + side * (eyeSpacing + 5) * sx
           const by = eyeY + 4
-          const blushG = ctx.createRadialGradient(bx, by, 0, bx, by, 4)
-          blushG.addColorStop(0, `hsla(${hue + 340}, 60%, 60%, 0.25)`)
-          blushG.addColorStop(1, `hsla(${hue + 340}, 50%, 55%, 0)`)
+          const blushG = ctx.createRadialGradient(bx, by, 0, bx, by, 5.2)
+          blushG.addColorStop(0, 'hsla(340, 92%, 72%, 0.46)')
+          blushG.addColorStop(0.55, 'hsla(348, 90%, 68%, 0.18)')
+          blushG.addColorStop(1, 'hsla(340, 90%, 70%, 0)')
           ctx.beginPath()
-          ctx.arc(bx, by, 4, 0, Math.PI * 2)
+          ctx.ellipse(bx, by, 5.2, 3.2, side * 0.15, 0, Math.PI * 2)
           ctx.fillStyle = blushG
           ctx.fill()
         }
+        // Shy mouth: tiny subtle smile
+        const shyAlpha = Math.min(1, transitionBlend * 2.5) * 0.35
+        ctx.beginPath()
+        ctx.arc(cx, cy + 7, 2.5, 0.2, Math.PI - 0.2)
+        ctx.strokeStyle = `hsla(0, 0%, 5%, ${shyAlpha})`
+        ctx.lineWidth = 1.2
+        ctx.lineCap = 'round'
+        ctx.stroke()
+      }
+
+      // Sleepy mouth: small yawning oval (intro + outro)
+      const showYawn = expression === 'sleepy' || sleepProgress > 0.35 || sleepOutro > 0.1
+      if (showYawn) {
+        // During intro: yawn fades in from 0.35→0.65 progress
+        // During outro: yawn reappears during first third of wake-up
+        const yawnAlpha = expression === 'sleepy' && sleepProgress >= 1
+          ? Math.min(1, transitionBlend * 2) * 0.45
+          : sleepOutro > 0.5
+            ? (sleepOutro - 0.5) / 0.5 * 0.45  // outro: yawn fades 1→0
+            : Math.min(1, (sleepProgress - 0.35) / 0.3) * 0.45
+        const yawnOpen = 1.5 + Math.sin(t * 1.2) * 0.3  // gentle pulse
+        ctx.beginPath()
+        ctx.ellipse(cx, cy + 8, 2.2, yawnOpen, 0, 0, Math.PI * 2)
+        ctx.fillStyle = `hsla(0, 0%, 8%, ${yawnAlpha})`
+        ctx.fill()
+        // Inner mouth highlight
+        ctx.beginPath()
+        ctx.ellipse(cx, cy + 7.5, 1.2, yawnOpen * 0.5, 0, 0, Math.PI * 2)
+        ctx.fillStyle = `hsla(340, 55%, 45%, ${yawnAlpha * 0.3})`
+        ctx.fill()
+      }
+
+      // Happy mouth: curved smile — fades smoothly with happyAlpha
+      if (happyAlpha > 0.01) {
+        const mouthAlpha = Math.min(1, transitionBlend * 2.5) * 0.7 * happyAlpha
+        ctx.beginPath()
+        ctx.arc(cx, cy + 5, 4, 0.3, Math.PI - 0.3)
+        ctx.strokeStyle = `hsla(0, 0%, 5%, ${mouthAlpha})`
+        ctx.lineWidth = 1.8
+        ctx.lineCap = 'round'
+        ctx.stroke()
+      }
+
+      // Mad mouth: angry frown — fades with intro/outro
+      const madMouthAlpha = madAlpha
+      if (madMouthAlpha > 0.01) {
+        ctx.beginPath()
+        ctx.arc(cx, cy + 10, 3.5, Math.PI + 0.3, -0.3)
+        ctx.strokeStyle = `hsla(0, 0%, 5%, ${0.5 * madMouthAlpha})`
+        ctx.lineWidth = 1.6
+        ctx.lineCap = 'round'
+        ctx.stroke()
       }
 
       // ══════════════════════════════════════════════════════════════
@@ -1002,7 +1366,7 @@ export function BlobCanvas() {
       // ══════════════════════════════════════════════════════════════
       // LAYER 8 — Processing rings
       // ══════════════════════════════════════════════════════════════
-      if (isProcessing) {
+      if (processing) {
         const pp2 = Math.sin(t * 4) * 0.3 + 0.7
 
         ctx.beginPath()
@@ -1019,9 +1383,13 @@ export function BlobCanvas() {
       }
 
       // ── Hue sync ──────────────────────────────────────────────────
-      localStorage.setItem('blob-hue', String(Math.round(c1.h)))
-      localStorage.setItem('blob-sat', String(Math.round(c1.s)) + '%')
-      localStorage.setItem('blob-light', String(Math.round(c1.l)) + '%')
+      hueSyncAccumulator += dt
+      if (hueSyncAccumulator >= 0.2) {
+        hueSyncAccumulator = 0
+        localStorage.setItem('blob-hue', String(Math.round(c1.h)))
+        localStorage.setItem('blob-sat', String(Math.round(c1.s)) + '%')
+        localStorage.setItem('blob-light', String(Math.round(c1.l)) + '%')
+      }
 
       raf = requestAnimationFrame(draw)
     }
@@ -1031,7 +1399,7 @@ export function BlobCanvas() {
       cancelAnimationFrame(raf)
       clearInterval(cursorInterval)
     }
-  }, [isProcessing, isDragging])
+  }, [])
 
   // ── Interaction ──────────────────────────────────────────────────────
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -1042,6 +1410,7 @@ export function BlobCanvas() {
     isPointerDownRef.current = true
     isDraggingRef.current = false
     didDragRef.current = false
+    draggingStateRef.current = false
     startScreenRef.current = { x: e.screenX, y: e.screenY }
 
     getWindowPosition().then((wp) => {
@@ -1057,6 +1426,7 @@ export function BlobCanvas() {
         if (Math.sqrt(dx * dx + dy * dy) <= DRAG_THRESHOLD) return
         isDraggingRef.current = true
         didDragRef.current = true
+        draggingStateRef.current = true
         setIsDragging(true)
       }
       const nx = startWindowRef.current.x + dx
@@ -1066,8 +1436,8 @@ export function BlobCanvas() {
 
       if (useConfigStore.getState().textboxOpen) {
         getScreenInfo().then((sc) => {
-          let chatX = Math.max(sc.x, Math.min(nx + 70 - CHAT_W * 0.5, sc.x + sc.width - CHAT_W))
-          let chatY = Math.max(sc.y, Math.min(ny + 160 + 5, sc.y + sc.height - CHAT_H_EXPANDED))
+          const chatX = Math.max(sc.x, Math.min(nx + 70 - CHAT_W * 0.5, sc.x + sc.width - CHAT_W))
+          const chatY = Math.max(sc.y, Math.min(ny + 160 + 5, sc.y + sc.height - CHAT_H_EXPANDED))
           setChatWindowPosition(chatX, chatY).catch(() => {})
         }).catch(() => {})
       }
@@ -1086,8 +1456,8 @@ export function BlobCanvas() {
           hideChatWindow().catch(() => {})
         } else {
           Promise.all([getWindowPosition(), getScreenInfo()]).then(([wp, sc]) => {
-            let chatX = Math.max(sc.x, Math.min(wp.x + 70 - CHAT_W * 0.5, sc.x + sc.width - CHAT_W))
-            let chatY = Math.max(sc.y, Math.min(wp.y + 160 + 5, sc.y + sc.height - CHAT_H_COLLAPSED))
+            const chatX = Math.max(sc.x, Math.min(wp.x + 70 - CHAT_W * 0.5, sc.x + sc.width - CHAT_W))
+            const chatY = Math.max(sc.y, Math.min(wp.y + 160 + 5, sc.y + sc.height - CHAT_H_COLLAPSED))
             setBlobScreenPos({ x: wp.x + 70, y: wp.y + 50 })
             setTextboxOpen(true)
             showChatWindow(chatX, chatY).catch(() => {})
@@ -1097,6 +1467,7 @@ export function BlobCanvas() {
 
       isDraggingRef.current = false
       didDragRef.current = false
+      draggingStateRef.current = false
       startScreenRef.current = null
       startWindowRef.current = null
       setIsDragging(false)
