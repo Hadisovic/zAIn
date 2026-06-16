@@ -188,13 +188,14 @@ fn get_window_label(window: tauri::Window) -> String {
 }
 
 #[tauri::command]
-fn get_cursor_position() -> Result<(f64, f64), String> {
+fn get_cursor_position(window: tauri::Window) -> Result<(f64, f64), String> {
     unsafe {
         use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
         use windows_sys::Win32::Foundation::POINT;
         let mut pt = POINT { x: 0, y: 0 };
         if GetCursorPos(&mut pt) != 0 {
-            Ok((pt.x as f64, pt.y as f64))
+            let scale = window.scale_factor().unwrap_or(1.0);
+            Ok((pt.x as f64 / scale, pt.y as f64 / scale))
         } else {
             Err("GetCursorPos failed".into())
         }
@@ -232,8 +233,8 @@ pub fn run() {
                     let scale = monitor.scale_factor();
                     let lw = phys.width as f64 / scale;
                     let lh = phys.height as f64 / scale;
-                    let w = 90.0;
-                    let h = 120.0;
+                    let w = 140.0;
+                    let h = 160.0;
                     let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize {
                         width: w,
                         height: h,

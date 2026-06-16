@@ -59,8 +59,16 @@ export function ChatTextbox() {
 
     const applyHue = () => {
       const hue = localStorage.getItem('blob-hue')
+      const sat = localStorage.getItem('blob-sat')
+      const light = localStorage.getItem('blob-light')
       if (hue) {
         root.style.setProperty('--blob-hue', hue)
+      }
+      if (sat) {
+        root.style.setProperty('--blob-sat', sat)
+      }
+      if (light) {
+        root.style.setProperty('--blob-light', light)
       }
     }
 

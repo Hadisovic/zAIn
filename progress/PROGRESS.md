@@ -730,8 +730,40 @@ cd csm && pip install -e .
 - Removed unused dependencies: `@rive-app/react-canvas`, `@vaerone/use-flip`
 - Removed unused store fields: `vizPreset`, `contextMessages`
 
+### 10. Visual Polish, Expressions, & Petting Interaction
+- **Canvas Size Expansion:**
+  - Expanded transparent main window/canvas boundaries from `90x120` to `140x160` in `tauri.conf.json`, `lib.rs`, and `BlobCanvas.tsx` (setting center coordinates to `cx = 70`, `cy = 50`). This successfully resolves the visual issue where the outer glow was cut off by an "invisible square".
+- **High-DPI Cursor Tracking Fix:**
+  - Re-engineered `get_cursor_position` Rust command to retrieve and scale raw Win32 coordinates by the monitor's `scale_factor()`. This ensures that eye-tracking and cursor-following look natural and align perfectly across monitors of different DPI configurations.
+- **Dedicated Sleep Mode Eyes:**
+  - Redesigned `sleepy` mode to directly render peaceful closed arcs (`︶`) in the main render loop instead of layering them on top of standard open eyes, eliminating the visual issue where pupil highlights and open eyelids bled through in the background.
+- **Petting Interaction System (Happy Mode):**
+  - Implemented petting detection: hovering the cursor near the blob and wiggling it horizontally (`dist < 85` pixels) increments a pet score. Once the score threshold is met, the blob enters a long-duration `happy` mode (lasting 60–120 seconds).
+  - Happy mode is configured to be 5x rarer during idle sequences, but lasts much longer when triggered. It features smiling eyes (`^` arcs) and a bright Lemon-Yellow to Fire-Orange gradient color scheme.
+- **Dynamic Gradient Pairs & Saturation/Lightness Breathing:**
+  - Replaced the simple hue rotation with custom mode-specific HSL gradient pairs that dynamically fade into each other:
+    - *Normal:* Teal-Blue `hsla(180, 70%, 65%)` to Indigo-Purple `hsla(230, 60%, 50%)`
+    - *Sleep:* Pastel Lavender `hsla(245, 50%, 45%)` to Deep Indigo `hsla(285, 45%, 35%)`
+    - *Happy:* Bright Lemon-Yellow `hsla(55, 95%, 62%)` to Fire-Orange `hsla(22, 95%, 52%)`
+    - *Angry:* Intense Crimson-Red `hsla(0, 80%, 60%)` to Dark Brick-Orange `hsla(300, 70%, 45%)`
+    - *Dragged:* Neon Blue `hsla(195, 75%, 65%)` to Electric Violet `hsla(270, 70%, 50%)`
+  - Integrated custom breathing wave logic that cycles the saturation and lightness offsets organically, ensuring the blob feels alive even when stationary.
+- **Smooth Mode Transitions (Color Lerp):**
+  - Implemented continuous linear interpolation (lerp) logic for color transitions at a speed of `0.025` (~0.8s), removing all instantaneous color snaps.
+- **Staged Drag-Release Sequence:**
+  - Releasing the blob after a drag duration longer than 2.5 seconds triggers a staged transition:
+    - *Phase 1 (Dizzy slow-mo deceleration):* The blob remains in dizzy mode for 2.0 seconds. Its spiral eyes and orbiting stars gradually slow down to a standstill.
+    - *Phase 2 (Brief pause):* The blob rests quietly in a neutral state for 0.5 seconds.
+    - *Phase 3 (Rage mode):* The blob enters angry mode (Crimson-Red glow, tilted closed-eye arcs, and an animated forehead anger vein 💢) for 7.0–9.0 seconds (2.0s longer than before).
+  - Normal drags (< 2.5s) return directly to standard idle.
+- **Decaying Angry-to-Normal Crossfade:**
+  - Programmed a 1.5s visual decay fade-out via a decaying alpha variable (`madAlphaRef`), blending the angry features (red overlay and anger vein) out smoothly rather than snapping.
+- **Cross-Window CSS Variable Color Sync:**
+  - Modified `BlobCanvas.tsx` to write live HSL values (`blob-hue`, `blob-sat`, `blob-light`) to `localStorage` every frame.
+  - Modified `ChatTextbox.tsx` to poll and apply these variables dynamically. This synchronizes the chat textbox's glassmorphic background colors and neumorphic borders with the exact breathing, organic hues of the main blob window.
+
 ---
 
 **Status:** Active development
-**Quality:** Production-grade code, needs visual polish on blob variants
+**Quality:** Production-grade code, fully polished expressions, colors, and transitions
 **Documentation:** This file is the single source of truth for all project progress
