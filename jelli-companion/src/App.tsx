@@ -113,7 +113,13 @@ function App() {
         if (!active) return
         const msgId = useChatStore.getState().getMessageIdForRequest(request_id)
         if (msgId) {
-          useChatStore.getState().updateMessage(msgId, { status: 'done' })
+          const msg = useChatStore.getState().messages.find((m) => m.id === msgId)
+          if (msg) {
+            const cleanedText = msg.text.replace(/[#\s]+$/, '').trim()
+            useChatStore.getState().updateMessage(msgId, { text: cleanedText, status: 'done' })
+          } else {
+            useChatStore.getState().updateMessage(msgId, { status: 'done' })
+          }
         }
         useChatStore.getState().setProcessing(false)
       })

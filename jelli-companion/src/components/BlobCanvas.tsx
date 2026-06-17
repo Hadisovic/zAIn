@@ -171,6 +171,7 @@ function mixHsl(from: HslColor, to: HslColor, amount: number): HslColor {
 export function BlobCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const setTextboxOpen = useConfigStore((s) => s.setTextboxOpen)
+  const textboxOpen = useConfigStore((s) => s.textboxOpen)
   const isDragging = useConfigStore((s) => s.isDragging)
   const setIsDragging = useConfigStore((s) => s.setIsDragging)
   const setBlobScreenPos = useConfigStore((s) => s.setBlobScreenPos)
@@ -178,6 +179,7 @@ export function BlobCanvas() {
 
   const draggingStateRef = useRef(isDragging)
   const processingStateRef = useRef(isProcessing)
+  const textboxOpenStateRef = useRef(textboxOpen)
   const isPointerDownRef = useRef(false)
   const isDraggingRef = useRef(false)
   const didDragRef = useRef(false)
@@ -257,6 +259,10 @@ export function BlobCanvas() {
   useEffect(() => {
     processingStateRef.current = isProcessing
   }, [isProcessing])
+
+  useEffect(() => {
+    textboxOpenStateRef.current = textboxOpen
+  }, [textboxOpen])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -399,6 +405,7 @@ export function BlobCanvas() {
       lastFrameTime = time
       const dragging = draggingStateRef.current
       const processing = processingStateRef.current
+      const textboxOpen = textboxOpenStateRef.current
 
       // ── Expression determination ─────────────────────────────────
       const now = Date.now()
@@ -445,8 +452,6 @@ export function BlobCanvas() {
 
       if (processing) {
         expression = 'thinking'
-      } else if (isUserTypingRef.current) {
-        expression = 'typing'
       } else if (dragging) {
         if (dragMs > RAGE_HOLD_MS) {
           expression = 'dizzy'
@@ -499,6 +504,10 @@ export function BlobCanvas() {
           happyTotalRef.current = 0
         }
         expression = 'happy'
+      } else if (textboxOpen) {
+        expression = 'typing'
+      } else if (isUserTypingRef.current) {
+        expression = 'typing'
       } else if (idleMs > SLEEP_IDLE_MS) {
         expression = 'sleepy'
       } else if (mouseSpeed > 800 && mouseNearBlob) {
