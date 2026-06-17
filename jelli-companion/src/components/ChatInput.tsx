@@ -1,7 +1,7 @@
 import { useRef, useCallback, useEffect, useState } from 'react'
 import { useChatStore } from '@/stores/chat'
 import { useConfigStore } from '@/stores/config'
-import { sendChatMessage, generateRequestId, emitUserTyping, emitUserIdle } from '@/lib/api'
+import { sendChatMessage, generateRequestId, emitUserTyping, emitUserIdle, onExpressionChanged } from '@/lib/api'
 
 const COMMANDS = [
   { value: '/settings', label: '/settings', desc: 'Open settings' },
@@ -151,6 +151,15 @@ export function ChatInput() {
       textareaRef.current.focus()
     }
   }, [isProcessing])
+
+  // Listen for expression changes from main window (cross-window sync)
+  useEffect(() => {
+    let unlisten: (() => void) | null = null
+    onExpressionChanged((expression) => {
+      useConfigStore.getState().setCurrentExpression(expression as never)
+    }).then((fn) => { unlisten = fn })
+    return () => { if (unlisten) unlisten() }
+  }, [])
 
   // Typing detection: emit events so the blob can show yellow curiosity state
   const wasTypingRef = useRef(false)

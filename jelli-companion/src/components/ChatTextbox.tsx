@@ -2,7 +2,7 @@ import { useRef, useEffect, useCallback, useState } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { useConfigStore } from '@/stores/config'
 import { useChatStore } from '@/stores/chat'
-import { sendChatMessage, hideChatWindow, resizeWindow, emitUserTyping, emitUserIdle, getScreenSize, emitOpenSettings, onShowChatWindow, onHideChatWindow } from '@/lib/api'
+import { sendChatMessage, hideChatWindow, resizeWindow, emitUserTyping, emitUserIdle, getScreenSize, emitOpenSettings, onShowChatWindow, onHideChatWindow, onExpressionChanged } from '@/lib/api'
 
 const CHAT_INPUT_HEIGHT = 56  // input row + padding
 const CHAT_MIN_H = 56        // just the input row
@@ -101,6 +101,15 @@ export function ChatTextbox() {
       if (unlistenShow) unlistenShow()
       if (unlistenHide) unlistenHide()
     }
+  }, [])
+
+  // Listen for expression changes from main window (cross-window sync)
+  useEffect(() => {
+    let unlisten: (() => void) | null = null
+    onExpressionChanged((expression) => {
+      useConfigStore.getState().setCurrentExpression(expression as never)
+    }).then((fn) => { unlisten = fn })
+    return () => { if (unlisten) unlisten() }
   }, [])
 
   // Dynamic resize: measure response content and resize window to fit
@@ -293,10 +302,12 @@ export function ChatTextbox() {
       const requestId = generateUUID()
       registerRequest(requestId, assistantMsgId)
 
-      const allMessages = useChatStore.getState().messages.map((m) => ({
-        role: m.role,
-        content: m.text,
-      }))
+      const allMessages = useChatStore.getState().messages
+        .filter((m) => m.status !== 'thinking')
+        .map((m) => ({
+          role: m.role,
+          content: m.text,
+        }))
       const ctxLimit = config.contextMessages * 2
       const messages = ctxLimit > 0 ? allMessages.slice(-ctxLimit) : allMessages
 

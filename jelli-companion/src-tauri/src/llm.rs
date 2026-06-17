@@ -114,17 +114,32 @@ async fn stream_ollama(
 ) -> Result<String, String> {
     let base = config.api_url.as_deref().unwrap_or(default_url("ollama"));
 
-    // Fallback: Prepend system prompt to the first user message.
-    // Some local model Modelfiles/templates completely ignore or omit the "system" role.
+    // Fallback: Some local model Modelfiles completely ignore the "system" role.
+    // We inject persona into the LAST user message so it's always fresh.
     let mut final_messages = messages.to_vec();
     if let Some(sys_msg) = messages.iter().find(|m| m.role == "system") {
         let sys_content = sys_msg.content.clone();
-        if let Some(first_user) = final_messages.iter_mut().find(|m| m.role == "user") {
-            first_user.content = format!(
-                "SYSTEM INSTRUCTIONS (ACT LIKE THIS): {}\n\nUSER MESSAGE: {}",
-                sys_content,
-                first_user.content
-            );
+
+        // Count user messages to determine turn number
+        let user_turn_count = final_messages.iter().filter(|m| m.role == "user").count();
+
+        if let Some(last_user) = final_messages.iter_mut().rev().find(|m| m.role == "user") {
+            if user_turn_count <= 1 {
+                // Turn 1: inject full system prompt
+                last_user.content = format!(
+                    "SYSTEM INSTRUCTIONS (ACT LIKE THIS): {}\n\nUSER MESSAGE: {}",
+                    sys_content,
+                    last_user.content
+                );
+            } else {
+                // Turn 2+: short reminder to stay in character
+                let short_reminder = "stay in character as jelli — lowercase, 1 sentence, emojis, gen z texting, no periods, be casual and brief";
+                last_user.content = format!(
+                    "{}\n\nUSER MESSAGE: {}",
+                    short_reminder,
+                    last_user.content
+                );
+            }
         }
     }
 

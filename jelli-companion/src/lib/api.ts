@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen, emit, type UnlistenFn } from '@tauri-apps/api/event'
-import { getSystemPrompt } from './system-prompt'
+import { getSystemPrompt, FEW_SHOT_MESSAGES } from './system-prompt'
 import type { BlobExpression } from '@/stores/config'
 
 export interface ChatMessage {
@@ -66,7 +66,7 @@ export async function sendChatMessage(
   expression?: BlobExpression,
 ): Promise<void> {
   const systemMsg: ChatMessage = { role: 'system', content: getSystemPrompt(expression) }
-  const augmented = [systemMsg, ...messages]
+  const augmented = [systemMsg, ...FEW_SHOT_MESSAGES, ...messages]
   await invoke('send_chat_message', {
     requestId,
     messages: augmented,
@@ -209,6 +209,16 @@ export function onUserTyping(handler: () => void): Promise<UnlistenFn> {
 
 export function onUserIdle(handler: () => void): Promise<UnlistenFn> {
   return listen('user:idle', () => handler())
+}
+
+// ── Expression Sync Events (cross-window) ───────────────────────────────────
+
+export function emitExpressionChanged(expression: string): Promise<void> {
+  return emit('expression:changed', { expression })
+}
+
+export function onExpressionChanged(handler: (expression: string) => void): Promise<UnlistenFn> {
+  return listen<{ expression: string }>('expression:changed', (e) => handler(e.payload.expression))
 }
 
 // ── Open Settings Events ───────────────────────────────────────────────────
