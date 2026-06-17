@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback } from 'react'
 import { useConfigStore } from '@/stores/config'
 import { useChatStore } from '@/stores/chat'
 import { BLOB } from '@/lib/constants'
-import { getWindowPosition, setWindowPosition, showChatWindow, hideChatWindow, getScreenInfo, setChatWindowPosition, getCursorPosition, onUserTyping, onUserIdle } from '@/lib/api'
+import { getWindowPosition, setWindowPosition, showChatWindow, hideChatWindow, getScreenInfo, setChatWindowPosition, getCursorPosition, onUserTyping, onUserIdle, emitShowChatWindow, emitHideChatWindow } from '@/lib/api'
 
 const DRAG_THRESHOLD = 6
 const CHAT_W = 360
@@ -1549,14 +1549,16 @@ export function BlobCanvas() {
         const open = useConfigStore.getState().textboxOpen
         if (open) {
           setTextboxOpen(false)
-          hideChatWindow().catch(() => {})
+          emitHideChatWindow().catch(() => {})
         } else {
           Promise.all([getWindowPosition(), getScreenInfo()]).then(([wp, sc]) => {
             const chatX = Math.max(sc.x, Math.min(wp.x + 70 - CHAT_W * 0.5, sc.x + sc.width - CHAT_W))
             const chatY = Math.max(sc.y, Math.min(wp.y + 160 + 5, sc.y + sc.height - CHAT_H_COLLAPSED))
             setBlobScreenPos({ x: wp.x + 70, y: wp.y + 50 })
             setTextboxOpen(true)
-            showChatWindow(chatX, chatY).catch(() => {})
+            showChatWindow(chatX, chatY).then(() => {
+              emitShowChatWindow().catch(() => {})
+            }).catch(() => {})
           }).catch(() => {})
         }
       }

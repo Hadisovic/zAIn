@@ -1,7 +1,8 @@
 import { useRef, useEffect, useCallback, useState } from 'react'
+import { motion, AnimatePresence } from 'motion/react'
 import { useConfigStore } from '@/stores/config'
 import { useChatStore } from '@/stores/chat'
-import { sendChatMessage, hideChatWindow, resizeWindow, emitUserTyping, emitUserIdle, getScreenSize, emitOpenSettings } from '@/lib/api'
+import { sendChatMessage, hideChatWindow, resizeWindow, emitUserTyping, emitUserIdle, getScreenSize, emitOpenSettings, onShowChatWindow, onHideChatWindow } from '@/lib/api'
 
 const CHAT_INPUT_HEIGHT = 56  // input row + padding
 const CHAT_MIN_H = 56        // just the input row
@@ -35,12 +36,41 @@ export function ChatTextbox() {
   const panelRef = useRef<HTMLDivElement>(null)
   const responseRef = useRef<HTMLDivElement>(null)
   const [sendFlash, setSendFlash] = useState(false)
-  const prevContentLenRef = useRef(0)
+  const [isOpen, setIsOpen] = useState(true)
 
   useEffect(() => {
     requestAnimationFrame(() => {
       inputRef.current?.focus()
     })
+  }, [])
+
+  // Listen for show/hide events to trigger animations
+  useEffect(() => {
+    let active = true
+    let unlistenShow: (() => void) | null = null
+    let unlistenHide: (() => void) | null = null
+
+    onShowChatWindow(() => {
+      if (!active) return
+      setIsOpen(true)
+    }).then((fn) => {
+      if (!active) { fn(); return; }
+      unlistenShow = fn
+    })
+
+    onHideChatWindow(() => {
+      if (!active) return
+      setIsOpen(false)
+    }).then((fn) => {
+      if (!active) { fn(); return; }
+      unlistenHide = fn
+    })
+
+    return () => {
+      active = false
+      if (unlistenShow) unlistenShow()
+      if (unlistenHide) unlistenHide()
+    }
   }, [])
 
   // Dynamic resize: measure response content and resize window to fit
@@ -114,7 +144,7 @@ export function ChatTextbox() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        hideChatWindow().catch(() => {})
+        setIsOpen(false)
       }
     }
     window.addEventListener('keydown', handleKeyDown)
@@ -200,7 +230,7 @@ export function ChatTextbox() {
 
     if (text === '/settings') {
       config.setTextboxOpen(false)
-      hideChatWindow().catch(() => {})
+      setIsOpen(false)
       emitOpenSettings().catch(() => {})
       return
     }
@@ -272,63 +302,74 @@ export function ChatTextbox() {
       className="chat-container"
       onContextMenu={handleContextMenu}
     >
-      <div ref={panelRef} className={`chat-panel${sendFlash ? ' sending' : ''}`}>
-        {lastAssistant?.text && (
-          <div ref={responseRef} className="chat-response">
-            <div className="flex items-start gap-2">
-              <div className="flex-1 min-w-0">
-                {lastAssistant.text}
-                {(isProcessing || isPlayingAudio) && (
-                  <span className="ink-cursor" />
-                )}
-              </div>
-              {isPlayingAudio && (
-                <div className="flex-shrink-0 flex gap-[3px] items-center h-4" title="Playing audio">
-                  <span className="w-[3px] h-2 rounded-full" style={{ background: 'hsla(var(--blob-hue), 70%, 65%, 0.8)', animation: 'audio-bar 0.6s ease-in-out infinite alternate', animationDelay: '0ms' }} />
-                  <span className="w-[3px] h-3 rounded-full" style={{ background: 'hsla(var(--blob-hue), 70%, 65%, 0.8)', animation: 'audio-bar 0.6s ease-in-out infinite alternate', animationDelay: '150ms' }} />
-                  <span className="w-[3px] h-2 rounded-full" style={{ background: 'hsla(var(--blob-hue), 70%, 65%, 0.8)', animation: 'audio-bar 0.6s ease-in-out infinite alternate', animationDelay: '300ms' }} />
-                </div>
-              )}
-              {isProcessing && !isPlayingAudio && (
-                <div className="flex-shrink-0 flex gap-[3px] items-center h-4" title="Generating">
-                  <span className="w-[3px] h-[3px] rounded-full" style={{ background: 'hsla(var(--blob-hue), 60%, 60%, 0.5)', animation: 'thinking-dot 1.2s ease-in-out infinite', animationDelay: '0ms' }} />
-                  <span className="w-[3px] h-[3px] rounded-full" style={{ background: 'hsla(var(--blob-hue), 60%, 60%, 0.5)', animation: 'thinking-dot 1.2s ease-in-out infinite', animationDelay: '200ms' }} />
-                  <span className="w-[3px] h-[3px] rounded-full" style={{ background: 'hsla(var(--blob-hue), 60%, 60%, 0.5)', animation: 'thinking-dot 1.2s ease-in-out infinite', animationDelay: '400ms' }} />
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        <div className="chat-input-row">
-          <div className="chat-input-wrapper">
-            <input
-              ref={inputRef}
-              type="text"
-              placeholder="Say something..."
-              className="chat-input"
-              onKeyDown={handleKeyDown}
-              disabled={isProcessing}
-            />
-          </div>
-          <button
-            type="button"
-            onClick={handleSend}
-            disabled={isProcessing}
-            className="send-btn"
-            title="Send (Enter)"
+      <AnimatePresence onExitComplete={() => hideChatWindow().catch(() => {})}>
+        {isOpen && (
+          <motion.div
+            ref={panelRef}
+            className={`chat-panel${sendFlash ? ' sending' : ''}`}
+            initial={{ opacity: 0, y: 15, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 15, scale: 0.95 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
           >
-            {isProcessing ? (
-              <div className="send-spinner" />
-            ) : (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M22 2L11 13" />
-                <path d="M22 2L15 22L11 13L2 9L22 2Z" />
-              </svg>
+            {lastAssistant?.text && (
+              <div ref={responseRef} className="chat-response">
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    {lastAssistant.text}
+                    {(isProcessing || isPlayingAudio) && (
+                      <span className="ink-cursor" />
+                    )}
+                  </div>
+                  {isPlayingAudio && (
+                    <div className="flex-shrink-0 flex gap-[3px] items-center h-4" title="Playing audio">
+                      <span className="w-[3px] h-2 rounded-full" style={{ background: 'hsla(var(--blob-hue), 70%, 65%, 0.8)', animation: 'audio-bar 0.6s ease-in-out infinite alternate', animationDelay: '0ms' }} />
+                      <span className="w-[3px] h-3 rounded-full" style={{ background: 'hsla(var(--blob-hue), 70%, 65%, 0.8)', animation: 'audio-bar 0.6s ease-in-out infinite alternate', animationDelay: '150ms' }} />
+                      <span className="w-[3px] h-2 rounded-full" style={{ background: 'hsla(var(--blob-hue), 70%, 65%, 0.8)', animation: 'audio-bar 0.6s ease-in-out infinite alternate', animationDelay: '300ms' }} />
+                    </div>
+                  )}
+                  {isProcessing && !isPlayingAudio && (
+                    <div className="flex-shrink-0 flex gap-[3px] items-center h-4" title="Generating">
+                      <span className="w-[3px] h-[3px] rounded-full" style={{ background: 'hsla(var(--blob-hue), 60%, 60%, 0.5)', animation: 'thinking-dot 1.2s ease-in-out infinite', animationDelay: '0ms' }} />
+                      <span className="w-[3px] h-[3px] rounded-full" style={{ background: 'hsla(var(--blob-hue), 60%, 60%, 0.5)', animation: 'thinking-dot 1.2s ease-in-out infinite', animationDelay: '200ms' }} />
+                      <span className="w-[3px] h-[3px] rounded-full" style={{ background: 'hsla(var(--blob-hue), 60%, 60%, 0.5)', animation: 'thinking-dot 1.2s ease-in-out infinite', animationDelay: '400ms' }} />
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
-          </button>
-        </div>
-      </div>
+
+            <div className="chat-input-row">
+              <div className="chat-input-wrapper">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  placeholder="Say something..."
+                  className="chat-input"
+                  onKeyDown={handleKeyDown}
+                  disabled={isProcessing}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleSend}
+                disabled={isProcessing}
+                className="send-btn"
+                title="Send (Enter)"
+              >
+                {isProcessing ? (
+                  <div className="send-spinner" />
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M22 2L11 13" />
+                    <path d="M22 2L15 22L11 13L2 9L22 2Z" />
+                  </svg>
+                )}
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

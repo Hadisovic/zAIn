@@ -220,3 +220,21 @@ export function emitOpenSettings(): Promise<void> {
 export function onOpenSettings(handler: () => void): Promise<UnlistenFn> {
   return listen('ui:open-settings', () => handler())
 }
+
+// ── Chat Window Visibility Events ───────────────────────────────────────────
+
+export function emitShowChatWindow(): Promise<void> {
+  return emit('ui:show-chat-window')
+}
+
+export function onShowChatWindow(handler: () => void): Promise<UnlistenFn> {
+  return listen('ui:show-chat-window', () => handler())
+}
+
+export function emitHideChatWindow(): Promise<void> {
+  return emit('ui:hide-chat-window')
+}
+
+export function onHideChatWindow(handler: () => void): Promise<UnlistenFn> {
+  return listen('ui:hide-chat-window', () => handler())
+}
