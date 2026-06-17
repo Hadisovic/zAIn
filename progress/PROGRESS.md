@@ -1,6 +1,6 @@
 # Jelli Companion — Complete Progress
 
-**Last Updated:** 2026-06-16
+**Last Updated:** 2026-06-17
 **Status:** Active development
 **Branch:** `master`
 
@@ -24,7 +24,8 @@
 14. [Build & Run Commands](#14-build--run-commands)
 15. [Key Decisions](#15-key-decisions)
 16. [Notes](#16-notes)
-17. [Recent Updates](#17-recent-updates)
+17. [Recent Updates (June 16, 2026)](#17-recent-updates-june-16-2026)
+18. [Recent Updates (June 17, 2026)](#18-recent-updates-june-17-2026)
 
 ---
 
@@ -501,13 +502,14 @@ LLM response (string)
 | `components/MessageList.tsx` | Auto-scrolling message list with AnimatePresence |
 | `components/SettingsPanel.tsx` | Provider, model, API key, Ollama URL, temperature, speaker ID settings |
 | `stores/chat.ts` | Messages, processing state, audio playing state, request tracking |
-| `stores/config.ts` | LLM provider config, UI state (expanded, textboxOpen, isDragging, blobScreenPos) |
-| `lib/api.ts` | Tauri command wrappers + event listener helpers with TypeScript interfaces |
+| stores/config.ts | LLM provider config, settings (opacity, penalties, etc.), UI state, currentExpression |
+| lib/api.ts | Tauri command wrappers + event listener helpers with TypeScript interfaces |
 | `lib/audio.ts` | Web Audio API progressive PCM playback (AudioPlayer class) |
 | `lib/constants.ts` | Widget/blob/timing constants (BLOB.SIZE=100, HUE_SPEED=15, BREATH_PERIOD_MS=3800) |
 | `lib/animation-presets.ts` | Spring physics configs (window, messageEnter/Exit, thinkingGlow, particleIdle, press) |
-| `lib/noise.ts` | 2D Perlin noise generator |
-| `styles/globals.css` | Tailwind v4 + glassmorphism + neumorphism + breathing border + send flash + ink cursor animations |
+| lib/noise.ts | 2D Perlin noise generator |
+| lib/system-prompt.ts | System prompt generator and personality suffix for mood expressions |
+| styles/globals.css | Tailwind v4 + glassmorphism + neumorphism + breathing border + send flash + ink cursor animations |
 | `types/tauri.d.ts` | `window.__TAURI__` type declaration |
 
 ### Backend (`jelli-companion/src-tauri/src/`)
@@ -565,7 +567,10 @@ LLM response (string)
 - [x] Vite build successful
 - [x] Multiple messages in sequence
 - [x] Stop generation button during processing
-- [x] Settings panel with provider/model/temperature/speaker selection
+- [x] Settings panel with LLM (provider, model, API key, URL, temperature, max tokens, repeat/frequency penalty, context messages), Blob (opacity, always-on-top), and Voice (speaker ID) selection
+- [x] Settings persist via Rust save_settings and load_settings Tauri commands
+- [x] Mood-matched persona system with unique prompts based on expression
+- [x] Dynamic chatbox window auto-resizing based on content height
 - [x] Right-click context menu blocked in production
 
 ### Not Verified (requires visual testing)
@@ -783,6 +788,53 @@ cd csm && pip install -e .
   - Renamed the main project directory from `zain-companion` to `jelli-companion` to align with the Jelli rebranding.
 - **Reference Updates:**
   - Updated name references in `package-lock.json` to use `"jelli-companion"` instead of `"zain-companion"`.
+
+---
+
+## 18. Recent Updates (June 17, 2026)
+
+### 1. Settings System Persistence
+- **Config Store Updates:**
+  - In [config.ts](file:///d:/Jelli/jelli-companion/src/stores/config.ts), added config fields [blobOpacity](file:///d:/Jelli/jelli-companion/src/stores/config.ts), [repeatPenalty](file:///d:/Jelli/jelli-companion/src/stores/config.ts), [frequencyPenalty](file:///d:/Jelli/jelli-companion/src/stores/config.ts), [blobSize](file:///d:/Jelli/jelli-companion/src/stores/config.ts), [alwaysOnTop](file:///d:/Jelli/jelli-companion/src/stores/config.ts), and [currentExpression](file:///d:/Jelli/jelli-companion/src/stores/config.ts) alongside their setters and a bulk loader [loadSettings](file:///d:/Jelli/jelli-companion/src/stores/config.ts).
+- **Rust Tauri Backed Persistence:**
+  - Added [save_settings](file:///d:/Jelli/jelli-companion/src-tauri/src/lib.rs) and [load_settings](file:///d:/Jelli/jelli-companion/src-tauri/src/lib.rs) Tauri commands to [lib.rs](file:///d:/Jelli/jelli-companion/src-tauri/src/lib.rs) for writing/reading `settings.json` from the application data directory.
+- **Settings Panel UI:**
+  - Fully rewrote [SettingsPanel.tsx](file:///d:/Jelli/jelli-companion/src/components/SettingsPanel.tsx) with organized configuration sections: LLM (provider, model, API key, base URL, temperature, max tokens, repeat/frequency penalties, context message limit), Blob (opacity slider, always-on-top toggle), and Voice (speaker ID selector). Also added dedicated Save and Load action buttons.
+- **Frontend API & Startup Bindings:**
+  - Bound the save/load settings command wrappers [saveSettings](file:///d:/Jelli/jelli-companion/src/lib/api.ts) / [loadSettings](file:///d:/Jelli/jelli-companion/src/lib/api.ts) and added `repeat_penalty` and `frequency_penalty` fields to [ProviderConfig](file:///d:/Jelli/jelli-companion/src/lib/api.ts) in [api.ts](file:///d:/Jelli/jelli-companion/src/lib/api.ts).
+  - Updated [App.tsx](file:///d:/Jelli/jelli-companion/src/App.tsx) to load configuration settings on application startup and apply blob opacity dynamically via CSS variables.
+
+### 2. Typing & Thinking Visual States
+- Already completed and verified from earlier sessions:
+  - Yellow typing state (sparkle eyes, warm breathing gradient).
+  - Orange thinking state (processing rings, focused eyes).
+  - Verified 34 instances/references of state transitions.
+
+### 3. Mood-Matched Persona System
+- **System Prompts with Unique Personality Suffixes:**
+  - Rewrote [system-prompt.ts](file:///d:/Jelli/jelli-companion/src/lib/system-prompt.ts) to define a [getSystemPrompt](file:///d:/Jelli/jelli-companion/src/lib/system-prompt.ts) function that appends a mood-matched persona suffix based on current expression:
+    - *idle:* casual adaptive friend
+    - *happy:* high-energy, slang, excessive exclamation marks
+    - *mad:* irritated, snappy, passive-aggressive responses
+    - *sleepy:* low energy, lowercase, trailing ellipses
+    - *dizzy:* scattered, chaotic, comical confusion
+    - *shy:* quiet, hesitant, sweet
+    - *surprised:* genuinely shocked
+    - *annoyed:* mildly bothered
+    - *typing:* curious, attentive
+    - *thinking:* thoughtful, processing
+- **Expression Propagation Store & Canvas updates:**
+  - Added [currentExpression](file:///d:/Jelli/jelli-companion/src/stores/config.ts) and [BlobExpression](file:///d:/Jelli/jelli-companion/src/stores/config.ts) to [config.ts](file:///d:/Jelli/jelli-companion/src/stores/config.ts).
+  - Updated [BlobCanvas.tsx](file:///d:/Jelli/jelli-companion/src/components/BlobCanvas.tsx) to update the current expression state in the store on every expression/animation change.
+  - Extended [sendChatMessage](file:///d:/Jelli/jelli-companion/src/lib/api.ts) in [api.ts](file:///d:/Jelli/jelli-companion/src/lib/api.ts) to accept an optional expression argument.
+  - Configured [ChatInput.tsx](file:///d:/Jelli/jelli-companion/src/components/ChatInput.tsx) and [ChatTextbox.tsx](file:///d:/Jelli/jelli-companion/src/components/ChatTextbox.tsx) to pass the current expression state when dispatching user messages.
+
+### 4. Dynamic Chatbox Height Resizing
+- **Removed Static Size Clamp:**
+  - Cleaned up [ChatTextbox.tsx](file:///d:/Jelli/jelli-companion/src/components/ChatTextbox.tsx) by removing the hardcoded `CHAT_H_EXPANDED = 250` resize logic.
+- **Dynamic Measurement and Resizing:**
+  - Implemented dynamic bounding rect measurement in [ChatTextbox.tsx](file:///d:/Jelli/jelli-companion/src/components/ChatTextbox.tsx) that checks actual height after messages or status changes, firing [resizeWindow](file:///d:/Jelli/jelli-companion/src/components/ChatTextbox.tsx) targeting a clamped range of `56px` to `320px` to fit contents.
+  - Modified [globals.css](file:///d:/Jelli/jelli-companion/src/styles/globals.css) to remove the restrictive `max-height: 200px` limitation from the `.chat-response` styling to ensure proper expansion behavior.
 
 ---
 
