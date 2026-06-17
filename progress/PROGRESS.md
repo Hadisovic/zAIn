@@ -836,8 +836,15 @@ cd csm && pip install -e .
   - Implemented dynamic bounding rect measurement in [ChatTextbox.tsx](file:///d:/Jelli/jelli-companion/src/components/ChatTextbox.tsx) that checks actual height after messages or status changes, firing [resizeWindow](file:///d:/Jelli/jelli-companion/src/components/ChatTextbox.tsx) targeting a clamped range of `56px` to `320px` to fit contents.
   - Modified [globals.css](file:///d:/Jelli/jelli-companion/src/styles/globals.css) to remove the restrictive `max-height: 200px` limitation from the `.chat-response` styling to ensure proper expansion behavior.
 
+### 5. Slash Commands Autocomplete Dropdown
+- **Symmetric Support in Floating and Main Chat Views:**
+  - Integrated autocomplete overlays triggered by typing `/` in both [ChatTextbox.tsx](file:///d:/Jelli/jelli-companion/src/components/ChatTextbox.tsx) and [ChatInput.tsx](file:///d:/Jelli/jelli-companion/src/components/ChatInput.tsx).
+  - Designed glassy dropdown styling positioned dynamically (e.g. using `bottom: calc(100% + 8px)` above the expanding textarea inside `ChatInput` to prevent overlapping) and color-synced with CSS custom properties.
+  - Fully supports keyboard arrow navigation (`ArrowUp`/`ArrowDown`), confirmation selection (`Enter`), and quick dismissal (`Escape`).
+
 ---
 
 **Status:** Active development
 **Quality:** Production-grade code, fully polished expressions, colors, and transitions
 **Documentation:** This file is the single source of truth for all project progress
+

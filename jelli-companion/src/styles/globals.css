@@ -383,3 +383,65 @@ canvas, img, svg {
 .settings-input:focus {
   border-color: var(--color-accent);
 }
+
+/* ── Command Dropdown Menu ──────────────────────────────────────────────── */
+.command-dropdown {
+  position: absolute;
+  bottom: 50px;
+  left: 8px;
+  right: 8px;
+  background: linear-gradient(
+    145deg,
+    hsla(var(--blob-hue), var(--blob-sat), 12%, 0.94) 0%,
+    hsla(var(--blob-hue), calc(var(--blob-sat) - 8%), 8%, 0.96) 100%
+  );
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid hsla(var(--blob-hue), var(--blob-sat), var(--blob-light), 0.16);
+  border-radius: 12px;
+  padding: 4px;
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.command-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s ease;
+  font-family: 'Outfit', sans-serif;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.command-item.active,
+.command-item:hover {
+  background: hsla(var(--blob-hue), var(--blob-sat), var(--blob-light), 0.18);
+  color: white;
+  outline: none;
+}
+
+.command-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: hsla(var(--blob-hue), var(--blob-sat), var(--blob-light), 0.9);
+}
+
+.command-desc {
+  font-size: 11px;
+  font-weight: 300;
+  color: rgba(255, 255, 255, 0.4);
+}

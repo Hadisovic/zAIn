@@ -9,6 +9,11 @@ const CHAT_MIN_H = 56        // just the input row
 const CHAT_MAX_H = 320       // never exceed this
 const CHAT_PADDING = 16      // panel padding (8px top + 8px bottom)
 
+const COMMANDS = [
+  { value: '/settings', label: '/settings', desc: 'Open settings' },
+  { value: '/clear', label: '/clear', desc: 'Clear chat history' },
+]
+
 function generateUUID(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0
@@ -37,6 +42,31 @@ export function ChatTextbox() {
   const responseRef = useRef<HTMLDivElement>(null)
   const [sendFlash, setSendFlash] = useState(false)
   const [isOpen, setIsOpen] = useState(true)
+  const [showCommands, setShowCommands] = useState(false)
+  const [activeCommandIndex, setActiveCommandIndex] = useState(0)
+  const [filteredCommands, setFilteredCommands] = useState(COMMANDS)
+
+  const handleSelectCommand = useCallback((val: string) => {
+    if (inputRef.current) {
+      inputRef.current.value = val
+      setShowCommands(false)
+      inputRef.current.focus()
+    }
+  }, [])
+
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value
+    if (val.startsWith('/')) {
+      const filtered = COMMANDS.filter((c) =>
+        c.value.toLowerCase().startsWith(val.toLowerCase())
+      )
+      setFilteredCommands(filtered)
+      setShowCommands(filtered.length > 0)
+      setActiveCommandIndex(0)
+    } else {
+      setShowCommands(false)
+    }
+  }, [])
 
   useEffect(() => {
     requestAnimationFrame(() => {
@@ -288,12 +318,38 @@ export function ChatTextbox() {
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (showCommands) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault()
+          setActiveCommandIndex((prev) => (prev + 1) % filteredCommands.length)
+          return
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault()
+          setActiveCommandIndex((prev) => (prev - 1 + filteredCommands.length) % filteredCommands.length)
+          return
+        }
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          const cmd = filteredCommands[activeCommandIndex]
+          if (cmd) {
+            handleSelectCommand(cmd.value)
+          }
+          return
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          setShowCommands(false)
+          return
+        }
+      }
+
       if (e.key === 'Enter' && !e.shiftKey && !isProcessing) {
         e.preventDefault()
         handleSend()
       }
     },
-    [handleSend, isProcessing]
+    [handleSend, isProcessing, showCommands, filteredCommands, activeCommandIndex, handleSelectCommand]
   )
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
@@ -344,6 +400,22 @@ export function ChatTextbox() {
               </div>
             )}
 
+            {showCommands && (
+              <div className="command-dropdown">
+                {filteredCommands.map((cmd, idx) => (
+                  <button
+                    key={cmd.value}
+                    type="button"
+                    className={`command-item${idx === activeCommandIndex ? ' active' : ''}`}
+                    onClick={() => handleSelectCommand(cmd.value)}
+                  >
+                    <span className="command-label">{cmd.label}</span>
+                    <span className="command-desc">{cmd.desc}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="chat-input-row">
               <div className="chat-input-wrapper">
                 <input
@@ -352,6 +424,7 @@ export function ChatTextbox() {
                   placeholder="Say something..."
                   className="chat-input"
                   onKeyDown={handleKeyDown}
+                  onChange={handleInputChange}
                   disabled={isProcessing}
                 />
               </div>
