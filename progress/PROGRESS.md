@@ -851,12 +851,20 @@ cd csm && pip install -e .
 - **Ollama System Prompt Fallback Injection:**
   - Patched `stream_ollama` in [llm.rs](file:///d:/Jelli/jelli-companion/src-tauri/src/llm.rs) to dynamically prepend system instruction blocks to the very first user message of the conversation context.
   - This acts as a robust fallback for local models whose Modelfiles/chat templates completely ignore or strip out the `"system"` role in the messages payload, guaranteeing the local model always reads the persona rules.
+- **AI/Age/Identity Exemplar Adjustments:**
+  - Added specific rules and few-shot exemplars inside [system-prompt.ts](file:///d:/Jelli/jelli-companion/src/lib/system-prompt.ts) for questions like *"how old are you?"* and *"who are you?"* to bypass pre-trained model safety disclaimers (e.g. "As a language model...").
+- **Trailing Hash Cleaning**:
+  - Configured `onLlmDone` event handler in [App.tsx](file:///d:/Jelli/jelli-companion/src/App.tsx) to automatically search and strip trailing hash characters (`#`) from completed assistant messages, which some local models output due to tokenizer configuration.
+- **Attentive Chat Mode (Active Blob Expression)**:
+  - Subscribed [BlobCanvas.tsx](file:///d:/Jelli/jelli-companion/src/components/BlobCanvas.tsx) to `textboxOpen` state from the config store.
+  - Updated the expression state machine to lock Jelli in the yellow "typing" (attentive curious) mode whenever the chat window is actively open, preventing the blob from falling asleep (`sleepy`) or entering standard idles (`idle`, `shy`) during active chat sessions.
 
 ---
 
 **Status:** Active development
 **Quality:** Production-grade code, fully polished expressions, colors, and transitions
 **Documentation:** This file is the single source of truth for all project progress
+
 
 
 
