@@ -4,7 +4,7 @@ import { ChatWidget } from '@/components/ChatWidget'
 import { ChatTextbox } from '@/components/ChatTextbox'
 import { useConfigStore } from '@/stores/config'
 import { useChatStore } from '@/stores/chat'
-import { startSidecar, stopSidecar, onLlmToken, onLlmDone, onLlmError, onAudioChunk, onAudioDone, onSidecarStatus, hideChatWindow, getWindowLabel, loadSettings } from '@/lib/api'
+import { startSidecar, stopSidecar, onLlmToken, onLlmDone, onLlmError, onAudioChunk, onAudioDone, onSidecarStatus, hideChatWindow, getWindowLabel, loadSettings, onOpenSettings } from '@/lib/api'
 import { audioPlayer } from '@/lib/audio'
 
 const isDev = import.meta.env.DEV
@@ -164,6 +164,28 @@ function App() {
       unlisteners.forEach((fn) => fn())
     }
   }, [])
+
+  // Listen for the cross-window open-settings event
+  useEffect(() => {
+    if (windowLabel !== 'main') return
+
+    let active = true
+    let unlisten: (() => void) | null = null
+
+    onOpenSettings(() => {
+      if (!active) return
+      useConfigStore.getState().setExpanded(true)
+      useConfigStore.getState().setSettingsOpen(true)
+    }).then((fn) => {
+      if (!active) { fn(); return; }
+      unlisten = fn
+    })
+
+    return () => {
+      active = false
+      if (unlisten) unlisten()
+    }
+  }, [windowLabel])
 
   if (windowLabel === 'chat') {
     return <ChatTextbox />

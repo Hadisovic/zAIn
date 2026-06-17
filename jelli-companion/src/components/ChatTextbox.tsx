@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback, useState } from 'react'
 import { useConfigStore } from '@/stores/config'
 import { useChatStore } from '@/stores/chat'
-import { sendChatMessage, hideChatWindow, resizeWindow, emitUserTyping, emitUserIdle, getScreenSize } from '@/lib/api'
+import { sendChatMessage, hideChatWindow, resizeWindow, emitUserTyping, emitUserIdle, getScreenSize, emitOpenSettings } from '@/lib/api'
 
 const CHAT_INPUT_HEIGHT = 56  // input row + padding
 const CHAT_MIN_H = 56        // just the input row
@@ -201,8 +201,7 @@ export function ChatTextbox() {
     if (text === '/settings') {
       config.setTextboxOpen(false)
       hideChatWindow().catch(() => {})
-      config.setExpanded(true)
-      config.setSettingsOpen(true)
+      emitOpenSettings().catch(() => {})
       return
     }
 

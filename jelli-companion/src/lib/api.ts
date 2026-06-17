@@ -210,3 +210,13 @@ export function onUserTyping(handler: () => void): Promise<UnlistenFn> {
 export function onUserIdle(handler: () => void): Promise<UnlistenFn> {
   return listen('user:idle', () => handler())
 }
+
+// ── Open Settings Events ───────────────────────────────────────────────────
+
+export function emitOpenSettings(): Promise<void> {
+  return emit('ui:open-settings')
+}
+
+export function onOpenSettings(handler: () => void): Promise<UnlistenFn> {
+  return listen('ui:open-settings', () => handler())
+}
