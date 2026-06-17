@@ -29,6 +29,12 @@ export function ChatInput() {
       autoResize()
     }
 
+    if (text === '/settings') {
+      config.setExpanded(true)
+      config.setSettingsOpen(true)
+      return
+    }
+
     addMessage({ text, role: 'user', status: 'sent' })
 
     setProcessing(true)

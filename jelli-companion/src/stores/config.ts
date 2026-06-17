@@ -17,6 +17,7 @@ interface ConfigStore {
   vizPreset: VizPreset
   expanded: boolean
   textboxOpen: boolean
+  settingsOpen: boolean
   isDragging: boolean
   blobScreenPos: { x: number; y: number } | null
   // ── New settings ──
@@ -39,6 +40,7 @@ interface ConfigStore {
   setVizPreset: (p: VizPreset) => void
   setExpanded: (v: boolean) => void
   setTextboxOpen: (v: boolean) => void
+  setSettingsOpen: (v: boolean) => void
   setIsDragging: (v: boolean) => void
   setBlobScreenPos: (pos: { x: number; y: number } | null) => void
   setBlobOpacity: (v: number) => void
@@ -64,6 +66,7 @@ export const useConfigStore = create<ConfigStore>((set) => ({
   vizPreset: 'orb',
   expanded: false,
   textboxOpen: false,
+  settingsOpen: false,
   isDragging: false,
   blobScreenPos: null,
   blobOpacity: 1.0,
@@ -84,6 +87,7 @@ export const useConfigStore = create<ConfigStore>((set) => ({
   setVizPreset: (vizPreset) => set({ vizPreset }),
   setExpanded: (expanded) => set({ expanded }),
   setTextboxOpen: (textboxOpen) => set({ textboxOpen }),
+  setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
   setIsDragging: (isDragging) => set({ isDragging }),
   setBlobScreenPos: (blobScreenPos) => set({ blobScreenPos }),
   setBlobOpacity: (blobOpacity) => set({ blobOpacity }),
@@ -98,6 +102,7 @@ export const useConfigStore = create<ConfigStore>((set) => ({
     // Prevent runtime-only state from being overwritten
     expanded: prev.expanded,
     textboxOpen: prev.textboxOpen,
+    settingsOpen: prev.settingsOpen,
     isDragging: prev.isDragging,
     blobScreenPos: prev.blobScreenPos,
   })),

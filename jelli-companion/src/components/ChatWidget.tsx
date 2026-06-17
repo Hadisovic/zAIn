@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { motion, AnimatePresence } from 'motion/react'
 import { useConfigStore } from '@/stores/config'
@@ -16,7 +16,8 @@ import { ChatInput } from './ChatInput'
 export function ChatWidget() {
   const expanded = useConfigStore((s) => s.expanded)
   const setExpanded = useConfigStore((s) => s.setExpanded)
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  const settingsOpen = useConfigStore((s) => s.settingsOpen)
+  const setSettingsOpen = useConfigStore((s) => s.setSettingsOpen)
   const isProcessing = useChatStore((s) => s.isProcessing)
   const latestRequestId = useChatStore((s) => s.latestRequestId)
 

@@ -189,6 +189,23 @@ export function ChatTextbox() {
     const text = inputRef.current?.value.trim()
     if (!text || isProcessing) return
 
+    if (inputRef.current) {
+      inputRef.current.value = ''
+    }
+    // Clear typing state
+    if (wasTypingRef.current) {
+      wasTypingRef.current = false
+      emitUserIdle()
+    }
+
+    if (text === '/settings') {
+      config.setTextboxOpen(false)
+      hideChatWindow().catch(() => {})
+      config.setExpanded(true)
+      config.setSettingsOpen(true)
+      return
+    }
+
     setSendFlash(true)
     setTimeout(() => setSendFlash(false), 600)
 
@@ -200,14 +217,6 @@ export function ChatTextbox() {
       status: 'thinking',
     })
 
-    if (inputRef.current) {
-      inputRef.current.value = ''
-    }
-    // Clear typing state
-    if (wasTypingRef.current) {
-      wasTypingRef.current = false
-      emitUserIdle()
-    }
     setProcessing(true)
 
     try {
