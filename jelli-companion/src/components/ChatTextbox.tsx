@@ -51,21 +51,49 @@ export function ChatTextbox() {
       await new Promise((r) => requestAnimationFrame(r))
 
       const panel = panelRef.current
+      const responseEl = responseRef.current
       if (!panel) return
 
-      const panelRect = panel.getBoundingClientRect()
-      const panelH = panelRect.height
+      let targetH = CHAT_MIN_H
+      const inputRow = panel.querySelector('.chat-input-row') as HTMLElement
+      const inputRowH = inputRow ? inputRow.getBoundingClientRect().height : CHAT_INPUT_HEIGHT
+      const panelPaddingAndBorder = 18 // 16px padding + 2px border
 
-      // Target height = panel content height + some buffer for border radius
-      const targetH = Math.max(CHAT_MIN_H, Math.min(CHAT_MAX_H, Math.ceil(panelH) + 4))
+      if (responseEl) {
+        // responseEl.scrollHeight includes content + internal padding
+        // Add 2px for response border + 8px for response margin-bottom
+        const responseH = responseEl.scrollHeight + 2 + 8
+        targetH = panelPaddingAndBorder + responseH + inputRowH + 6 // 6px safety buffer
+      } else {
+        targetH = panelPaddingAndBorder + inputRowH
+      }
 
-      // Get current window size to avoid unnecessary resizes
+      // Get current window size and clamp target height
       try {
         const screen = await getScreenSize()
         const maxAllowed = Math.min(CHAT_MAX_H, Math.floor(screen.height * 0.4))
         const clampedH = Math.min(targetH, maxAllowed)
+
+        if (responseEl) {
+          const isOverflowed = targetH > clampedH
+          responseEl.style.overflowY = isOverflowed ? 'auto' : 'hidden'
+
+          // Auto-scroll to bottom during generation or audio playback
+          if (isProcessing || isPlayingAudio) {
+            responseEl.scrollTop = responseEl.scrollHeight
+          }
+        }
+
         resizeWindow(360, clampedH).catch(() => {})
       } catch {
+        if (responseEl) {
+          const isOverflowed = targetH > CHAT_MAX_H
+          responseEl.style.overflowY = isOverflowed ? 'auto' : 'hidden'
+
+          if (isProcessing || isPlayingAudio) {
+            responseEl.scrollTop = responseEl.scrollHeight
+          }
+        }
         resizeWindow(360, targetH).catch(() => {})
       }
     }
