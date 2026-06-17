@@ -837,14 +837,22 @@ cd csm && pip install -e .
   - Modified [globals.css](file:///d:/Jelli/jelli-companion/src/styles/globals.css) to remove the restrictive `max-height: 200px` limitation from the `.chat-response` styling to ensure proper expansion behavior.
 
 ### 5. Slash Commands Autocomplete Dropdown
-- **Symmetric Support in Floating and Main Chat Views:**
-  - Integrated autocomplete overlays triggered by typing `/` in both [ChatTextbox.tsx](file:///d:/Jelli/jelli-companion/src/components/ChatTextbox.tsx) and [ChatInput.tsx](file:///d:/Jelli/jelli-companion/src/components/ChatInput.tsx).
-  - Designed glassy dropdown styling positioned dynamically (e.g. using `bottom: calc(100% + 8px)` above the expanding textarea inside `ChatInput` to prevent overlapping) and color-synced with CSS custom properties.
+- **Below-the-Bar Display & Compact Aesthetics:**
+  - Integrated autocomplete overlays triggered by typing `/` in both [ChatTextbox.tsx](file:///d:/Jelli/jelli-companion/src/components/ChatTextbox.tsx) (floating chat window) and [ChatInput.tsx](file:///d:/Jelli/jelli-companion/src/components/ChatInput.tsx) (main panel).
+  - Placed the dropdown directly below the input bar for both components to prevent blocking text content or the floating jellyfish.
+  - Added new compact styling variables (.command-dropdown-below, etc.) with narrow padding and matching HSL color properties in [globals.css](file:///d:/Jelli/jelli-companion/src/styles/globals.css) to ensure it fits beautifully without ruining the layout.
+  - Configured the dynamic `measure` effect inside [ChatTextbox.tsx](file:///d:/Jelli/jelli-companion/src/components/ChatTextbox.tsx) to automatically resize the Tauri OS window to accommodate the dropdown height when visible.
   - Fully supports keyboard arrow navigation (`ArrowUp`/`ArrowDown`), confirmation selection (`Enter`), and quick dismissal (`Escape`).
+
+### 6. Gemini System Prompt & Persona Bug Fix
+- **System Instruction Mapping:**
+  - Patched `stream_gemini` in [llm.rs](file:///d:/Jelli/jelli-companion/src-tauri/src/llm.rs) to extract system prompt messages from the message history and properly pass them using the native `systemInstruction` field in the Gemini API body.
+  - This prevents the prompt from being sent as a regular user message (which was violating the Gemini role alternation rule and causing the model to ignore formatting guidelines like lowercase-only texting).
 
 ---
 
 **Status:** Active development
 **Quality:** Production-grade code, fully polished expressions, colors, and transitions
 **Documentation:** This file is the single source of truth for all project progress
+
 

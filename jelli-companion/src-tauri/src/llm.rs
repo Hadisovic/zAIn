@@ -245,19 +245,31 @@ async fn stream_gemini(
 ) -> Result<String, String> {
     let base = config.api_url.as_deref().unwrap_or(default_url("gemini"));
     let key = config.api_key.as_deref().ok_or("gemini: no api key")?;
-    let gemini_contents: Vec<serde_json::Value> = messages.iter().map(|m| {
+
+    let system = messages.iter().find(|m| m.role == "system").map(|m| m.content.as_str());
+    let chat_messages: Vec<&ChatMessage> = messages.iter().filter(|m| m.role != "system").collect();
+
+    let gemini_contents: Vec<serde_json::Value> = chat_messages.iter().map(|m| {
         serde_json::json!({
             "role": if m.role == "assistant" { "model" } else { "user" },
             "parts": [{"text": m.content}]
         })
     }).collect();
-    let body = serde_json::json!({
+
+    let mut body = serde_json::json!({
         "contents": gemini_contents,
         "generationConfig": {
             "temperature": config.temperature.unwrap_or(0.7),
             "maxOutputTokens": config.max_tokens.unwrap_or(2048),
         }
     });
+
+    if let Some(sys_text) = system {
+        body["systemInstruction"] = serde_json::json!({
+            "parts": [{"text": sys_text}]
+        });
+    }
+
     let url = format!("{base}/v1beta/models/{}:streamGenerateContent?key={key}", config.model);
     let client = build_client();
     let resp = client.post(&url)
