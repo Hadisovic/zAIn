@@ -167,6 +167,10 @@ export async function loadSettings(): Promise<Record<string, unknown>> {
   return await invoke<Record<string, unknown>>('load_settings')
 }
 
+export interface LlmClearPayload {
+  request_id: string
+}
+
 // ── Event Listeners ─────────────────────────────────────────────────────────
 
 export function onLlmToken(handler: EventHandler<LlmTokenPayload>): Promise<UnlistenFn> {
@@ -175,6 +179,10 @@ export function onLlmToken(handler: EventHandler<LlmTokenPayload>): Promise<Unli
 
 export function onLlmDone(handler: EventHandler<LlmDonePayload>): Promise<UnlistenFn> {
   return listen<LlmDonePayload>('llm:done', (e) => handler(e.payload))
+}
+
+export function onLlmClear(handler: EventHandler<LlmClearPayload>): Promise<UnlistenFn> {
+  return listen<LlmClearPayload>('llm:clear', (e) => handler(e.payload))
 }
 
 export function onLlmError(handler: EventHandler<LlmErrorPayload>): Promise<UnlistenFn> {

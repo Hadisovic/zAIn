@@ -4,7 +4,7 @@ import { ChatWidget } from '@/components/ChatWidget'
 import { ChatTextbox } from '@/components/ChatTextbox'
 import { useConfigStore } from '@/stores/config'
 import { useChatStore } from '@/stores/chat'
-import { startSidecar, stopSidecar, onLlmToken, onLlmDone, onLlmError, onAudioChunk, onAudioDone, onSidecarStatus, hideChatWindow, getWindowLabel, loadSettings, onOpenSettings } from '@/lib/api'
+import { startSidecar, stopSidecar, onLlmToken, onLlmDone, onLlmClear, onLlmError, onAudioChunk, onAudioDone, onSidecarStatus, hideChatWindow, getWindowLabel, loadSettings, onOpenSettings } from '@/lib/api'
 import { audioPlayer } from '@/lib/audio'
 
 const isDev = import.meta.env.DEV
@@ -125,6 +125,16 @@ function App() {
       })
       if (!active) { u2(); return; }
       unlisteners.push(u2)
+
+      const uLlmClear = await onLlmClear(({ request_id }) => {
+        if (!active) return
+        const msgId = useChatStore.getState().getMessageIdForRequest(request_id)
+        if (msgId) {
+          useChatStore.getState().updateMessage(msgId, { text: '' })
+        }
+      })
+      if (!active) { uLlmClear(); return; }
+      unlisteners.push(uLlmClear)
 
       const u3 = await onLlmError(({ request_id, message }) => {
         if (!active) return

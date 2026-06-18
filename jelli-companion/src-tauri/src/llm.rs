@@ -42,12 +42,17 @@ pub struct LlmErrorPayload {
     pub message: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct LlmClearPayload {
+    pub request_id: String,
+}
+
 fn is_cancelled(request_id: &str, map: &CancelMap) -> bool {
     map.try_lock().map(|g| g.get(request_id).copied().unwrap_or(false)).unwrap_or(false)
 }
 
-pub async fn stream_llm(
-    window: &tauri::Window,
+pub async fn stream_llm<R: tauri::Runtime>(
+    window: &tauri::Window<R>,
     request_id: &str,
     messages: &[ChatMessage],
     config: &ProviderConfig,
@@ -55,6 +60,7 @@ pub async fn stream_llm(
 ) -> Result<String, String> {
     let rid = request_id.to_string();
     match config.provider.as_str() {
+        "gateway" => stream_gateway(window, &rid, messages, config, cancel_map).await,
         "ollama" => stream_ollama(window, &rid, messages, config, cancel_map).await,
         "openai" => stream_openai(window, &rid, messages, config, cancel_map).await,
         "anthropic" => stream_anthropic(window, &rid, messages, config, cancel_map).await,
@@ -64,21 +70,195 @@ pub async fn stream_llm(
     }
 }
 
-async fn emit_token(window: &tauri::Window, request_id: &str, token: &str) {
+struct GatewayTier {
+    name: &'static str,
+    model: &'static str,
+    base_url: &'static str,
+    env_key: &'static str,
+}
+
+const GATEWAY_TIERS: &[GatewayTier] = &[
+    GatewayTier {
+        name: "Groq (Tier 1)",
+        model: "llama-3.1-8b-instant",
+        base_url: "https://api.groq.com/openai",
+        env_key: "GROQ_API_KEY",
+    },
+    GatewayTier {
+        name: "Mistral (Tier 2)",
+        model: "mistral-small",
+        base_url: "https://api.mistral.ai",
+        env_key: "MISTRAL_API_KEY",
+    },
+    GatewayTier {
+        name: "OpenRouter (Tier 3)",
+        model: "meta-llama/llama-3-8b-instruct:free",
+        base_url: "https://openrouter.ai/api",
+        env_key: "OPENROUTER_API_KEY",
+    },
+];
+
+async fn stream_gateway<R: tauri::Runtime>(
+    window: &tauri::Window<R>,
+    request_id: &str,
+    messages: &[ChatMessage],
+    config: &ProviderConfig,
+    cancel: &CancelMap,
+) -> Result<String, String> {
+    use futures_util::StreamExt;
+    
+    // Check if any keys are configured in the environment
+    let mut configured = false;
+    for tier in GATEWAY_TIERS {
+        if let Ok(key) = std::env::var(tier.env_key) {
+            if !key.trim().is_empty() {
+                configured = true;
+                break;
+            }
+        }
+    }
+    
+    if !configured {
+        return Err("No API keys found in environment variables or .env file for the gateway (GROQ_API_KEY, MISTRAL_API_KEY, OPENROUTER_API_KEY). Please add them to proceed.".to_string());
+    }
+
+    for tier in GATEWAY_TIERS {
+        if is_cancelled(request_id, cancel) {
+            return Err("Request cancelled".to_string());
+        }
+
+        let api_key = match std::env::var(tier.env_key) {
+            Ok(key) if !key.trim().is_empty() => key.trim().to_string(),
+            _ => {
+                println!("[gateway] Skipping {} because {} is not set.", tier.name, tier.env_key);
+                continue;
+            }
+        };
+
+        println!("[gateway] Trying {} using model {}...", tier.name, tier.model);
+
+        let body = serde_json::json!({
+            "model": tier.model,
+            "messages": messages,
+            "stream": true,
+            "temperature": config.temperature.unwrap_or(0.7),
+            "max_tokens": config.max_tokens.unwrap_or(2048),
+        });
+
+        let client = build_client();
+        let mut req = client.post(format!("{}/v1/chat/completions", tier.base_url))
+            .header("Authorization", format!("Bearer {api_key}"));
+
+        if tier.env_key == "OPENROUTER_API_KEY" {
+            req = req.header("HTTP-Referer", "https://github.com/Hadisovic/Jelli")
+                     .header("X-Title", "Jelli Companion");
+        }
+
+        let start_time = std::time::Instant::now();
+        let resp_result = req.json(&body).send().await;
+
+        let resp = match resp_result {
+            Ok(r) => r,
+            Err(e) => {
+                println!("[gateway] {} request failed: {}", tier.name, e);
+                continue;
+            }
+        };
+
+        let status = resp.status();
+        if !status.is_success() {
+            let err_text = resp.text().await.unwrap_or_default();
+            println!(
+                "[gateway] {} HTTP error {} after {:?}: {}",
+                tier.name,
+                status,
+                start_time.elapsed(),
+                err_text
+            );
+            continue;
+        }
+
+        println!("[gateway] {} connected successfully, starting stream...", tier.name);
+
+        let mut full = String::new();
+        let mut stream = resp.bytes_stream();
+        let mut buf = String::new();
+        let mut parsed_successfully = true;
+
+        while let Some(chunk) = stream.next().await {
+            if is_cancelled(request_id, cancel) {
+                break;
+            }
+            match chunk {
+                Ok(bytes) => {
+                    buf.push_str(&String::from_utf8_lossy(&bytes));
+                    while let Some(line_end) = buf.find('\n') {
+                        let line = buf[..line_end].trim().to_string();
+                        buf = buf[line_end + 1..].to_string();
+                        if line.is_empty() || line.starts_with(':') {
+                            continue;
+                        }
+                        if line == "data: [DONE]" {
+                            break;
+                        }
+                        if let Some(data) = line.strip_prefix("data: ") {
+                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+                                if let Some(text) = json["choices"][0]["delta"]["content"].as_str() {
+                                    full.push_str(text);
+                                    emit_token(window, request_id, text).await;
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("[gateway] {} stream chunk error: {}", tier.name, e);
+                    parsed_successfully = false;
+                    break;
+                }
+            }
+        }
+
+        if is_cancelled(request_id, cancel) {
+            return Ok(full);
+        }
+
+        if !parsed_successfully {
+            println!("[gateway] {} stream interrupted mid-generation. Resetting text and failing over...", tier.name);
+            let _ = window.emit("llm:clear", LlmClearPayload {
+                request_id: request_id.to_string(),
+            });
+            continue;
+        }
+
+        if full.is_empty() {
+            println!("[gateway] {} produced an empty response, failing over...", tier.name);
+            continue;
+        }
+
+        println!("[gateway] {} completed generation successfully.", tier.name);
+        emit_done(window, request_id).await;
+        return Ok(full);
+    }
+
+    Err("All gateway tiers failed to produce a valid response.".to_string())
+}
+
+async fn emit_token<R: tauri::Runtime>(window: &tauri::Window<R>, request_id: &str, token: &str) {
     let _ = window.emit("llm:token", TokenPayload {
         request_id: request_id.to_string(),
         token: token.to_string(),
     });
 }
 
-async fn emit_done(window: &tauri::Window, request_id: &str) {
+async fn emit_done<R: tauri::Runtime>(window: &tauri::Window<R>, request_id: &str) {
     let _ = window.emit("llm:done", LlmDonePayload {
         request_id: request_id.to_string(),
     });
 }
 
 #[allow(dead_code)]
-async fn emit_error(window: &tauri::Window, request_id: &str, message: &str) {
+async fn emit_error<R: tauri::Runtime>(window: &tauri::Window<R>, request_id: &str, message: &str) {
     let _ = window.emit("llm:error", LlmErrorPayload {
         request_id: request_id.to_string(),
         message: message.to_string(),
@@ -105,8 +285,8 @@ fn build_client() -> reqwest::Client {
 
 // ── Ollama ──────────────────────────────────────────────────────────────────
 
-async fn stream_ollama(
-    window: &tauri::Window,
+async fn stream_ollama<R: tauri::Runtime>(
+    window: &tauri::Window<R>,
     request_id: &str,
     messages: &[ChatMessage],
     config: &ProviderConfig,
@@ -186,8 +366,8 @@ async fn stream_ollama(
 
 // ── OpenAI ──────────────────────────────────────────────────────────────────
 
-async fn stream_openai(
-    window: &tauri::Window,
+async fn stream_openai<R: tauri::Runtime>(
+    window: &tauri::Window<R>,
     request_id: &str,
     messages: &[ChatMessage],
     config: &ProviderConfig,
@@ -216,8 +396,8 @@ async fn stream_openai(
 
 // ── DeepSeek (OpenAI-compatible) ────────────────────────────────────────────
 
-async fn stream_deepseek(
-    window: &tauri::Window,
+async fn stream_deepseek<R: tauri::Runtime>(
+    window: &tauri::Window<R>,
     request_id: &str,
     messages: &[ChatMessage],
     config: &ProviderConfig,
@@ -228,8 +408,8 @@ async fn stream_deepseek(
 
 // ── Anthropic ───────────────────────────────────────────────────────────────
 
-async fn stream_anthropic(
-    window: &tauri::Window,
+async fn stream_anthropic<R: tauri::Runtime>(
+    window: &tauri::Window<R>,
     request_id: &str,
     messages: &[ChatMessage],
     config: &ProviderConfig,
@@ -266,8 +446,8 @@ async fn stream_anthropic(
 
 // ── Gemini ─────────────────────────────────────────────────────────────────
 
-async fn stream_gemini(
-    window: &tauri::Window,
+async fn stream_gemini<R: tauri::Runtime>(
+    window: &tauri::Window<R>,
     request_id: &str,
     messages: &[ChatMessage],
     config: &ProviderConfig,
@@ -314,16 +494,22 @@ async fn stream_gemini(
 
 // ── SSE parser (shared by OpenAI, Anthropic, Gemini, DeepSeek) ──────────────
 
-async fn parse_sse_stream<F>(
-    window: &tauri::Window,
+async fn parse_sse_stream<R, F>(
+    window: &tauri::Window<R>,
     request_id: &str,
     resp: reqwest::Response,
     cancel: &CancelMap,
     extract: F,
 ) -> Result<String, String>
 where
+    R: tauri::Runtime,
     F: Fn(&serde_json::Value) -> Option<String>,
 {
+    let status = resp.status();
+    if !status.is_success() {
+        let err_text = resp.text().await.unwrap_or_default();
+        return Err(format!("HTTP error {}: {}", status, err_text));
+    }
     use futures_util::StreamExt;
     let mut full = String::new();
     let mut stream = resp.bytes_stream();

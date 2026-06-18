@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type LLMProvider = 'ollama' | 'openai' | 'anthropic' | 'gemini' | 'deepseek'
+export type LLMProvider = 'ollama' | 'openai' | 'anthropic' | 'gemini' | 'deepseek' | 'gateway'
 export type VizPreset = 'orb' | 'wave' | 'galaxy' | 'tunnel'
 export type BlobExpression = 'idle' | 'annoyed' | 'dizzy' | 'sleepy' | 'happy' | 'surprised' | 'shy' | 'mad' | 'typing' | 'thinking'
 
@@ -54,8 +54,8 @@ interface ConfigStore {
 }
 
 export const useConfigStore = create<ConfigStore>((set) => ({
-  llmProvider: 'ollama',
-  llmModel: 'qwen:4b',
+  llmProvider: 'gateway',
+  llmModel: 'failover-gateway',
   apiKey: '',
   ollamaUrl: 'http://localhost:11434',
   temperature: 0.7,

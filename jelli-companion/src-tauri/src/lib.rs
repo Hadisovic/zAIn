@@ -236,14 +236,51 @@ fn load_settings(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     Ok(val)
 }
 
+fn load_env_file(app_handle: Option<&tauri::AppHandle>) {
+    let mut paths = vec![
+        std::path::PathBuf::from(".env"),
+        std::path::PathBuf::from("../.env"),
+    ];
+
+    if let Some(app) = app_handle {
+        if let Ok(dir) = app.path().app_data_dir() {
+            paths.push(dir.join(".env"));
+        }
+    }
+
+    for path in paths {
+        if path.exists() {
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                println!("[env] Loading environment from: {:?}", path);
+                for line in content.lines() {
+                    let line = line.trim();
+                    if line.is_empty() || line.starts_with('#') {
+                        continue;
+                    }
+                    if let Some((key, val)) = line.split_once('=') {
+                        let key = key.trim();
+                        let val = val.trim().trim_matches('"').trim_matches('\'');
+                        if !key.is_empty() {
+                            std::env::set_var(key, val);
+                        }
+                    }
+                }
+                break;
+            }
+        }
+    }
+}
+
 // ── Entry point ──────────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    load_env_file(None);
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .setup(|app| {
+            load_env_file(Some(app.handle()));
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()

@@ -11,6 +11,7 @@ interface SettingsPanelProps {
 
 const SPEAKER_IDS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 const PROVIDERS: { value: LLMProvider; label: string }[] = [
+  { value: 'gateway', label: 'Failover Gateway (Zero-Config)' },
   { value: 'ollama', label: 'Ollama (local)' },
   { value: 'openai', label: 'OpenAI' },
   { value: 'anthropic', label: 'Anthropic' },
@@ -57,7 +58,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
   const apiKeyRef = useRef<HTMLInputElement>(null)
   const urlRef = useRef<HTMLInputElement>(null)
 
-  const needsApiKey = llmProvider !== 'ollama'
+  const needsApiKey = llmProvider !== 'ollama' && llmProvider !== 'gateway'
 
   const handleSave = useCallback(async () => {
     const state = useConfigStore.getState()
@@ -155,24 +156,59 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                 </section>
 
                 {/* Model name */}
-                <section>
-                  <label className="settings-label">Model</label>
-                  <input
-                    ref={modelRef}
-                    type="text"
-                    defaultValue={llmModel}
-                    placeholder={llmProvider === 'ollama' ? 'qwen:4b' : 'gpt-4o-mini'}
-                    onBlur={() => {
-                      if (modelRef.current) setLlmModel(modelRef.current.value.trim() || llmModel)
-                    }}
-                    className="settings-input mt-1.5"
-                  />
-                  {llmProvider === 'ollama' && (
-                    <p className="text-xs text-white/30 mt-1">
-                      Run <span className="font-mono text-white/40">ollama list</span> to see available models
+                {llmProvider !== 'gateway' && (
+                  <section>
+                    <label className="settings-label">Model</label>
+                    <input
+                      ref={modelRef}
+                      type="text"
+                      defaultValue={llmModel}
+                      placeholder={llmProvider === 'ollama' ? 'qwen:4b' : 'gpt-4o-mini'}
+                      onBlur={() => {
+                        if (modelRef.current) setLlmModel(modelRef.current.value.trim() || llmModel)
+                      }}
+                      className="settings-input mt-1.5"
+                    />
+                    {llmProvider === 'ollama' && (
+                      <p className="text-xs text-white/30 mt-1">
+                        Run <span className="font-mono text-white/40">ollama list</span> to see available models
+                      </p>
+                    )}
+                  </section>
+                )}
+
+                {/* Failover Gateway Info */}
+                {llmProvider === 'gateway' && (
+                  <div className="bg-white/5 rounded-lg p-3 border border-white/8 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-white/70">Gateway Active</span>
+                      <span className="flex h-2 w-2 relative">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-white/45 leading-relaxed">
+                      Automatically routes queries with cascading fallback logic if a provider is rate-limited or fails.
                     </p>
-                  )}
-                </section>
+                    <div className="space-y-1.5 pt-1 border-t border-white/5">
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="w-4 h-4 flex items-center justify-center rounded-full bg-accent/25 text-accent text-[10px] font-bold">1</span>
+                        <span className="text-white/60 font-medium">Groq Llama 3.1 8B</span>
+                        <span className="ml-auto text-[10px] text-white/30 font-mono">Primary (Fastest)</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="w-4 h-4 flex items-center justify-center rounded-full bg-white/10 text-white/50 text-[10px] font-bold">2</span>
+                        <span className="text-white/50 font-medium">Mistral Small</span>
+                        <span className="ml-auto text-[10px] text-white/30 font-mono">Secondary Fallback</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="w-4 h-4 flex items-center justify-center rounded-full bg-white/10 text-white/50 text-[10px] font-bold">3</span>
+                        <span className="text-white/50 font-medium">OpenRouter Free</span>
+                        <span className="ml-auto text-[10px] text-white/30 font-mono">Tertiary Backup</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* API Key (cloud providers) */}
                 {needsApiKey && (

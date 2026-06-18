@@ -233,6 +233,10 @@ Replace original basic circles with dynamic vector-morphing character blobs.
 - [x] Transition animations (dizzy drag-deceleration into rage mode)
 - [x] Trailing hash symbols cleanup from token streams
 - [x] Smart quote TypeScript transpilation fixes
+- [x] Secure `.env` backend-only environment configuration loading
+- [x] Zero-Config 3-Tier sequential LLM failover gateway logic
+- [x] Mid-stream client error handling and message bubble reset events (`llm:clear`)
+- [x] Premium Settings Panel gateway active indicator and hierarchy overlay
 
 ### Pending Visual Validations
 - [ ] Render parameters optimization for plasma particles on HDR displays
@@ -292,14 +296,19 @@ cd csm && pip install -e .
 
 ## 11. Recent Updates
 
-### 📅 June 18, 2026: Personality Delivery & Persona Sync
+### 📅 June 18, 2026: Zero-Config 3-Tier Cascading LLM Gateway & Persona Sync
 > [!IMPORTANT]
-> Fixed a critical issue where Jelli was responding formally ("I am doing well, thank you for asking.") instead of using its casual character rules.
+> Built a secure, zero-config backend proxy LLM gateway that sequence-routes requests through three fallback tiers (Groq, Mistral, OpenRouter) and isolates developer API keys. Also fixed Jelli's character rules application.
 
+* **3-Tier Cascading LLM Gateway:** Implemented sequential failover client loops in [llm.rs](file:///d:/Jelli/jelli-companion/src-tauri/src/llm.rs) (Groq `llama-3.1-8b-instant` ➔ Mistral Small ➔ OpenRouter `meta-llama/llama-3-8b-instruct:free`). Automatically intercepts HTTP errors (e.g. `429 Too Many Requests`) or connection errors.
+* **Mid-Stream Resets:** Emitters dispatch the `"llm:clear"` event to the frontend on mid-stream failures, clearing the current message bubble to start fresh on the next fallback tier.
+* **Secure Backend Key Loading:** Implemented `load_env_file` in [lib.rs](file:///d:/Jelli/jelli-companion/src-tauri/src/lib.rs) to search and load `.env` runtime configurations on startup, isolating keys from the React build bundle.
+* **Premium Status Panel UI:** Integrated an active gateway status card in [SettingsPanel.tsx](file:///d:/Jelli/jelli-companion/src/components/SettingsPanel.tsx) with HSL indicators, green ping pulses, and succession priority details.
+* **Generic Runtime Refactor:** Ported all Tauri RPC methods to be generic over `tauri::Runtime` to decouple webview dependency locks for unit test compilation.
 * **Cross-Window Expression Sync:** Added Tauri IPC events in [api.ts](file:///d:/Jelli/jelli-companion/src/lib/api.ts) (`emitExpressionChanged`/`onExpressionChanged`). The canvas emits expression changes to notify ChatTextbox and ChatInput immediately, applying appropriate mood suffixes during floating chat sessions.
 * **Ollama Target Injection Fix:** Patched [llm.rs](file:///d:/Jelli/jelli-companion/src-tauri/src/llm.rs) to target the *last* user message in the thread. Prepend system persona reminder on turn 2+ ("stay in character as jelli — lowercase, 1 sentence, emojis, gen z texting, no periods") to maintain consistency without inflating context size.
 * **Few-Shot Prompt Extraction:** Extracted training prompt examples into `FEW_SHOT_MESSAGES` in [system-prompt.ts](file:///d:/Jelli/jelli-companion/src/lib/system-prompt.ts) and prepended them directly as conversation history. This forces smaller LLMs (e.g. Qwen:4b) to weigh character constraints more heavily.
-* **Base Prompt Tightening:** Tightened `BASE_PROMPT` down to 6 core lines to maximize attention weights. Rewrote all `MOOD_SUFFIXES` as tone modifiers to prevent contradiction rules (e.g. happy mode no longer conflicts with lowercase directives).
+* **Base Prompt Tightening:** Tightened `BASE_PROMPT` down to 6 core lines to maximize attention weights. Rewrote all `MOOD_SUFFIXES` as tone modifiers to prevent contradiction rules.
 * **Code Cleanups:** Replaced curly quotes with ASCII apostrophes in system prompt blocks to avoid esbuild parsing issues, and filtered out thinking state messages in [ChatTextbox.tsx](file:///d:/Jelli/jelli-companion/src/components/ChatTextbox.tsx) before compiling context vectors.
 
 ### 📅 June 17, 2026: Persistence & Dynamic UI Controls

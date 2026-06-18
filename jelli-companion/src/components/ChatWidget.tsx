@@ -80,7 +80,7 @@ export function ChatWidget() {
             >
               <button
                 type="button"
-                onClick={() => setSettingsOpen((v) => !v)}
+                onClick={() => setSettingsOpen(!settingsOpen)}
                 onMouseDown={(e) => e.stopPropagation()}
                 className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-white/10 text-white/40 hover:text-white/70 transition-colors"
                 title="Settings"

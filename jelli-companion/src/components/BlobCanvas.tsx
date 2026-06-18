@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback } from 'react'
 import { useConfigStore } from '@/stores/config'
 import { useChatStore } from '@/stores/chat'
 import { BLOB } from '@/lib/constants'
-import { getWindowPosition, setWindowPosition, showChatWindow, hideChatWindow, getScreenInfo, setChatWindowPosition, getCursorPosition, onUserTyping, onUserIdle, emitShowChatWindow, emitHideChatWindow, emitExpressionChanged } from '@/lib/api'
+import { getWindowPosition, setWindowPosition, showChatWindow, getScreenInfo, setChatWindowPosition, getCursorPosition, onUserTyping, onUserIdle, emitShowChatWindow, emitHideChatWindow, emitExpressionChanged } from '@/lib/api'
 
 const DRAG_THRESHOLD = 6
 const CHAT_W = 360

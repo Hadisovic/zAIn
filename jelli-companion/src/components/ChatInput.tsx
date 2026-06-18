@@ -22,6 +22,13 @@ export function ChatInput() {
   const [activeCommandIndex, setActiveCommandIndex] = useState(0)
   const [filteredCommands, setFilteredCommands] = useState(COMMANDS)
 
+  const autoResize = useCallback(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`
+  }, [])
+
   const handleSelectCommand = useCallback((val: string) => {
     if (textareaRef.current) {
       textareaRef.current.value = val
@@ -31,13 +38,6 @@ export function ChatInput() {
       textareaRef.current.focus()
     }
   }, [autoResize])
-
-  const autoResize = useCallback(() => {
-    const el = textareaRef.current
-    if (!el) return
-    el.style.height = 'auto'
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`
-  }, [])
 
   const handleSend = useCallback(async () => {
     const text = valueRef.current.trim()

@@ -7,7 +7,6 @@ import { sendChatMessage, hideChatWindow, resizeWindow, emitUserTyping, emitUser
 const CHAT_INPUT_HEIGHT = 56  // input row + padding
 const CHAT_MIN_H = 56        // just the input row
 const CHAT_MAX_H = 320       // never exceed this
-const CHAT_PADDING = 16      // panel padding (8px top + 8px bottom)
 
 const COMMANDS = [
   { value: '/settings', label: '/settings', desc: 'Open settings' },
