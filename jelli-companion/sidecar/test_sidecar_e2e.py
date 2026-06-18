@@ -13,7 +13,7 @@ import sys
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 
-SIDECAR_SCRIPT = os.path.join(os.path.dirname(__file__), 'csm_sidecar.py')
+SIDECAR_SCRIPT = os.path.join(os.path.dirname(__file__), 'tts_sidecar.py')
 
 def test_sidecar():
     print(f"Starting sidecar: python {SIDECAR_SCRIPT}")
@@ -27,6 +27,11 @@ def test_sidecar():
     )
 
     try:
+        # Read ready message
+        ready_line = proc.stdout.readline()
+        ready_response = json.loads(ready_line.strip())
+        print(f"  ✓ Ready → {ready_response}")
+
         # Test 1: Heartbeat
         print("\n--- Test 1: Heartbeat ---")
         msg = json.dumps({"type": "heartbeat"}) + "\n"

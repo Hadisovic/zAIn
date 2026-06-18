@@ -65,7 +65,7 @@ Click blob → Chat opens → Type message → Send
 | **State Manager** | [Zustand](https://zustand-demo.pmnd.rs/) | 5.0.14 | Store management with direct creation |
 | **Backend** | [Rust](https://www.rust-lang.org/) | 1.96.0 | System-level Tauri bindings and window controls (MSVC toolchain) |
 | **LLM Interface** | SSE / HTTP | — | Direct streaming support for Ollama, OpenAI, Anthropic, Gemini, DeepSeek |
-| **TTS System** | CSM-1B / Dia 2 | — | Python-based speech generation sidecar; PCM stream reader |
+| **TTS System** | Dia 2 | — | Python-based speech generation sidecar; PCM stream reader |
 | **Audio Playback** | Web Audio API | — | Real-time browser PCM streaming player |
 
 ---
@@ -97,7 +97,7 @@ User sends message
   → Frontend appends tokens in real-time
   → Stream complete (emits "llm:done") 
   → Rust sidecar::send_tts(text) 
-  → Python sidecar generates speech via CSM-1B/Dia 2 
+  → Python sidecar generates speech via Dia 2 
   → Raw float32 PCM chunks (24kHz) piped to stdout 
   → Rust encodes base64 (emits "audio:chunk" events) 
   → Frontend AudioPlayer.play() streams audio progressively
@@ -155,7 +155,7 @@ Wire streaming LLM APIs (Ollama/OpenAI/Gemini/Anthropic/DeepSeek) and Python-bas
 ### Deliverables
 * **Rust LLM Proxy** ([llm.rs](file:///d:/Jelli/jelli-companion/src-tauri/src/llm.rs)): Direct SSE streaming pipeline supporting multiple cloud APIs and local Ollama servers.
 * **Rust Sidecar Manager** ([sidecar.rs](file:///d:/Jelli/jelli-companion/src-tauri/src/sidecar.rs)): Controls background execution and JSONL standard streams of python processes.
-* **Python TTS Sidecar** ([csm_sidecar.py](file:///d:/Jelli/jelli-companion/sidecar/csm_sidecar.py)): Integrates CUDA-accelerated Sesame CSM-1B model (with a beep fallback when GPU dependencies are missing).
+* **Python TTS Sidecar** ([csm_sidecar.py](file:///d:/Jelli/jelli-companion/sidecar/csm_sidecar.py)): Integrates CUDA-accelerated speech model (with a beep fallback when GPU dependencies are missing).
 * **Audio Queue Player** ([audio.ts](file:///d:/Jelli/jelli-companion/src/lib/audio.ts)): Decodes and schedules incoming raw base64 float32 PCM chunks via the Web Audio API without latency gaps.
 </details>
 
@@ -213,7 +213,6 @@ Replace original basic circles with dynamic vector-morphing character blobs.
 
 ### Python Sidecar Modules
 * **[csm_sidecar.py](file:///d:/Jelli/jelli-companion/sidecar/csm_sidecar.py):** Audio generation service.
-* **[generator.py](file:///d:/Jelli/jelli-companion/csm/generator.py):** Sesame CSM-1B core generation pipelines (Llama 3.2 + Mimi codec).
 
 ### Cloud Edge Gateway Modules (`jelli-gateway/`)
 * **[index.ts](file:///d:/Jelli/jelli-gateway/src/index.ts):** Centralized cloud gateway proxy implementing payload sanitization, IP-based rate limiting (10 req/min), and 3-Tier failover streaming cascade (Groq ➔ Mistral ➔ OpenRouter).
@@ -311,7 +310,6 @@ npm run tauri build
 ```bash
 # Python dependencies setup
 pip install -r sidecar/requirements.txt
-cd csm && pip install -e .
 ```
 
 ---

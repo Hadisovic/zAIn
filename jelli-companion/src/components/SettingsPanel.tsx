@@ -418,7 +418,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                       </button>
                     ))}
                   </div>
-                  <p className="text-xs text-white/30 mt-1">CSM-1B speaker (0–9)</p>
+                  <p className="text-xs text-white/30 mt-1">Speaker ID (0–9)</p>
                 </section>
               </div>
             </div>

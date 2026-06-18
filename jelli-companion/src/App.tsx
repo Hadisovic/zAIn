@@ -81,9 +81,9 @@ function App() {
 
     const init = async () => {
       try {
-        await startSidecar('python', ['sidecar/csm_sidecar.py'])
+        await startSidecar('python', ['sidecar/tts_sidecar.py'])
       } catch (e) {
-        console.warn('[sidecar] Failed to start (CSM not installed yet):', e)
+        console.warn('[sidecar] Failed to start:', e)
       }
     }
     init()

@@ -35,7 +35,7 @@ Upstream inference is managed by a secure, zero-config Cloudflare Worker proxy t
 * ⚡ **3-Tier Cascading Failover:** Automatic sequential fallback loops executing in the cloud (Groq `llama-3.1-8b-instant` ➔ Mistral Small ➔ OpenRouter Free).
 * 🛡️ **Abuse & Injection Guardrails:** Enforces IP-based rate limiting (max 10 requests per minute) and sanitizes incoming payloads to discard prompt injection or system persona overrides.
 * 🔄 **Mid-Stream Clear Events:** Worker emits `data: [CLEAR]` events on mid-stream fallback handovers, signaling the client to reset its bubble text before the next tier resumes.
-* 🎙️ **Low-Latency Voice:** Real-time voice generation using **CSM-1B / Dia 2** with gapless streaming PCM chunk audio over Tauri IPC.
+* 🎙️ **Low-Latency Voice:** Real-time voice generation using **Dia 2** with gapless streaming PCM chunk audio over Tauri IPC.
 
 ---
 
@@ -92,7 +92,6 @@ Here is a quick look at the main modules of the **Jelli** ecosystem:
 | **[`/jelli-companion`](./jelli-companion)** | Desktop Client App | React 19, TypeScript, Vite, Tauri v2, CSS Glassmorphism |
 | **[`/jelli-gateway`](./jelli-gateway)** | Secure Inference Gateway | Cloudflare Workers, TypeScript, Wrangler, Miniflare |
 | **[`/progress`](./progress)** | Roadmap & Consolidated Progress Logs | Markdown progress log archive |
-| **[`.claude`](./.claude)** | Workspace Agent Settings | Permissions & Agent configuration JSON |
 
 ---
 
