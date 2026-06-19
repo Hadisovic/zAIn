@@ -621,6 +621,52 @@ interface SessionMemory {
 
 ---
 
+## 12. Sound Effects System
+
+### 📅 June 19, 2026: Jelli Sound Effects
+
+#### SFX Manager
+- **New file: `src/lib/sfx.ts`** — Full SFX manager using Web Audio API
+  - `loadSounds()` — preloads 6 WAV files at startup, falls back to procedural placeholders
+  - `play(soundName)` — plays a sound, stops TTS first, debounced 500ms
+  - `setSfxVolume(0-1)` — adjusts GainNode in real-time
+  - `setSfxMuted(bool)` — mute/unmute all SFX
+  - Procedural placeholder generator for all 6 sounds (bubble pop, chimes, sparkle jingle, warble, grumpy puff)
+
+#### Sound Map
+| Event | Trigger | Sound | Duration |
+|-------|---------|-------|----------|
+| Click | User clicks blob | Soft bubble pop | ~0.2s |
+| Sleep | Blob enters sleepy | Gentle descending chime | ~1.2s |
+| Wake | Blob wakes from sleep | Bright ascending chime | ~0.6s |
+| Happy | Blob enters happy | Cheerful sparkle jingle | ~0.8s |
+| Dizzy | Blob enters dizzy | Wobbly warble | ~0.7s |
+| Mad | Blob enters mad | Grumpy puff | ~0.5s |
+
+#### Config Store Additions
+- `sfxVolume: number` (0-1, default 0.7)
+- `sfxMuted: boolean` (default false)
+- Both persisted to `settings.json`
+
+#### SettingsPanel
+- New "Sound Effects" section in Voice tab with volume slider (0-100%) and mute toggle
+
+#### BlobCanvas Integration
+- Expression changes trigger corresponding SFX
+- Click (no drag) triggers click sound
+- SFX blocks TTS (stops TTS, plays sound)
+
+### Files Modified
+| File | Changes |
+|------|---------|
+| `src/lib/sfx.ts` | **NEW** — SFX manager: load, play, volume, mute, procedural placeholders |
+| `src/stores/config.ts` | Added `sfxVolume`, `sfxMuted` + setters |
+| `src/components/SettingsPanel.tsx` | Added Sound Effects section in Voice tab |
+| `src/components/BlobCanvas.tsx` | SFX triggers on expression change + click |
+| `src/App.tsx` | Load sounds on startup |
+
+---
+
 **Status:** Active development  
 **Quality:** Production-grade code, fully polished expressions, colors, and transitions  
 **Documentation:** This file is the single source of truth for all project progress
