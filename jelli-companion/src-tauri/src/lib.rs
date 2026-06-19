@@ -8,6 +8,7 @@ use tauri::Emitter;
 use tauri::Manager;
 
 const SETTINGS_FILE: &str = "settings.json";
+const MEMORY_FILE: &str = "memory.json";
 
 struct AppState {
     cancel_map: CancelMap,
@@ -271,6 +272,44 @@ fn load_env_file(app_handle: Option<&tauri::AppHandle>) {
     }
 }
 
+// ── Memory persistence ─────────────────────────────────────────────────────
+
+#[tauri::command]
+fn save_memory(app: tauri::AppHandle, memory: serde_json::Value) -> Result<(), String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("app_data_dir: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create_dir_all: {e}"))?;
+    let path = dir.join(MEMORY_FILE);
+    let json =
+        serde_json::to_string_pretty(&memory).map_err(|e| format!("serialize memory: {e}"))?;
+    std::fs::write(&path, json).map_err(|e| format!("write memory: {e}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+fn load_memory(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("app_data_dir: {e}"))?;
+    let path = dir.join(MEMORY_FILE);
+    if !path.exists() {
+        return Ok(serde_json::json!({
+            "version": 1,
+            "userProfile": {},
+            "preferences": {},
+            "projects": [],
+            "facts": []
+        }));
+    }
+    let data = std::fs::read_to_string(&path).map_err(|e| format!("read memory: {e}"))?;
+    let val: serde_json::Value =
+        serde_json::from_str(&data).map_err(|e| format!("parse memory: {e}"))?;
+    Ok(val)
+}
+
 // ── Entry point ──────────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -341,6 +380,8 @@ pub fn run() {
             send_tts,
             save_settings,
             load_settings,
+            save_memory,
+            load_memory,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

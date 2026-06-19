@@ -243,8 +243,23 @@ async fn stream_ollama<R: tauri::Runtime>(
                     last_user.content
                 );
             } else {
-                // Turn 2+: short reminder to stay in character
-                let short_reminder = "stay in character as jelli — lowercase, 1 sentence, emojis, gen z texting, no periods, be casual and brief";
+                // Turn 2+: include memory context in reminder
+                // Extract memory context from system prompt if present
+                let memory_context = if let Some(memory_start) = sys_content.find("Known user context:") {
+                    &sys_content[memory_start..]
+                } else {
+                    ""
+                };
+
+                let short_reminder = if memory_context.is_empty() {
+                    "stay in character as jelli — lowercase, 1 sentence, emojis, gen z texting, no periods, be casual and brief".to_string()
+                } else {
+                    format!(
+                        "stay in character as jelli — lowercase, 1 sentence, emojis, gen z texting, no periods, be casual and brief\n\n{}",
+                        memory_context
+                    )
+                };
+
                 last_user.content = format!(
                     "{}\n\nUSER MESSAGE: {}",
                     short_reminder,

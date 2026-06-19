@@ -189,7 +189,9 @@ Replace original basic circles with dynamic vector-morphing character blobs.
 | **8** | Position return value mismatched between TS and Rust | Rust command returned array structure `[x, y]` while TS expected `{x, y}` object | Destructured output values directly in JS wrapper |
 | **9** | Chat box jumps during transition expansion | Single window resize logic altering coordinates centering | Migrated layout to Two-Window system |
 | **10** | Missing method runtime crash in TTS sidecar | Script referenced deprecated `generate()` method | Updated sidecar backend to execute `Generator.generate()` |
-| **11** | Smart quote parse error during bundler stage | System prompt file utilized curly smart quotes `’` (U+2019) | Replaced smart quotes with straight ASCII apostrophes in string literals |
+| **11** | Smart quote parse error during bundler stage | System prompt file utilized curly smart quotes | Replaced smart quotes with straight ASCII apostrophes in string literals |
+| **12** | Settings panel shows chat messages behind it | `MessageList` always rendered in `ChatWidget` even when settings overlay was open; `.settings-bg` used alpha 0.95-0.98 allowing blur-through | Conditionally hide `MessageList` when `settingsOpen`; made `.settings-bg` fully opaque (alpha 1.0) and removed `backdrop-filter` |
+| **13** | Settings back arrow reveals chat screen | Settings rendered as child of `ChatWidget`; closing settings only hid overlay while `expanded=true` kept chat visible | Introduced `MainView = 'blob' \| 'chat' \| 'settings'` routing; settings renders as own top-level overlay in `App.tsx`; ChatWidget only handles chat |
 
 ---
 
@@ -240,6 +242,9 @@ Replace original basic circles with dynamic vector-morphing character blobs.
 - [x] Zero-Config 3-Tier sequential LLM failover gateway logic
 - [x] Mid-stream client error handling and message bubble reset events (`llm:clear`)
 - [x] Premium Settings Panel gateway active indicator and hierarchy overlay
+- [x] Settings panel renders without chat bleed-through
+- [x] Settings and chat are separated by MainView routing
+- [x] Settings window resizes to 430x640, restores to 140x160
 
 ### Pending Visual Validations
 - [ ] Render parameters optimization for plasma particles on HDR displays
@@ -325,6 +330,261 @@ pip install -r sidecar/requirements.txt
 
 ## 11. Recent Updates
 
+### 📅 June 18, 2026: Separate Settings from Chat + Window Size Fix
+
+**Branch:** `fix/separate-settings-from-chat`  
+**Status:** Complete
+
+#### Problem
+Settings back arrow revealed the chat screen. Settings was rendered as a child of `ChatWidget`, making it a sub-page of chat rather than an independent view. After routing fix, settings window was still sized for the blob (140x160).
+
+#### Root Cause
+`ChatWidget.tsx` rendered `<SettingsPanel>` inside its expanded view. The back arrow called `onClose()` which set `settingsOpen=false`, hiding settings but leaving `expanded=true`, so chat was visible underneath.
+
+#### Fix
+1. Introduced `MainView = 'blob' | 'chat' | 'settings'` routing state in config store. App.tsx now routes views exclusively — only one panel renders at a time.
+2. ChatWidget only handles chat. Settings renders as its own top-level overlay.
+3. Settings close button returns to blob state, not chat.
+4. Added `useEffect` in App.tsx that resizes Tauri window: settings opens at 430x640, closes back to 140x160.
+
+#### Files Changed
+
+| File | Changes |
+|------|---------|
+| `src/stores/config.ts` | Added `MainView` type, `mainView` state, `setMainView` setter |
+| `src/App.tsx` | Routes views via `mainView`, renders SettingsPanel as top-level overlay, window resize useEffect |
+| `src/components/ChatWidget.tsx` | Removed all settings code, now chat-only |
+| `src/components/ChatInput.tsx` | `/settings` command uses `setMainView('settings')` |
+
+#### What Settings Close Button Does Now
+Closes settings and returns to blob/normal companion state. Does NOT return to chat.
+
+---
+
+### 📅 June 18, 2026: Settings Render Separation Fix
+
+**Status:** Complete
+
+#### Problem
+Settings panel showed chat messages (MessageList) bleeding through behind the settings overlay, especially visible with the glassmorphic backdrop blur.
+
+#### Root Causes
+
+1. **MessageList Always Rendered** — `ChatWidget.tsx` rendered `<MessageList />` unconditionally inside the same container as `<SettingsPanel>`, even when settings was open.
+2. **Semi-Transparent Settings Background** — `.settings-bg` used alpha values 0.95-0.98 with `backdrop-filter: blur(32px)`, allowing chat content to blur through.
+
+#### Fix
+
+- **`ChatWidget.tsx`:** Conditionally render `<MessageList />` only when `!settingsOpen`.
+- **`globals.css`:** Changed `.settings-bg` alpha from 0.95-0.98 to fully opaque (1.0) and removed `backdrop-filter` (no longer needed with opaque background).
+
+#### Files Changed
+
+| File | Changes |
+|------|---------|
+| `src/components/ChatWidget.tsx` | Conditionally hide `MessageList` when settings is open |
+| `src/styles/globals.css` | Made `.settings-bg` fully opaque, removed `backdrop-filter` |
+
+---
+
+### 📅 June 18, 2026: Chat-Active Mode Fix & Memory Schema Update
+
+**Branch:** `fix/chat-active-mode-local-memory`  
+**Status:** Complete
+
+#### Problem 1: Chat-Open Yellow Mode Not Working
+When the chat box was opened, the blob should stay in yellow/chat-active mode, but it was being overridden by other visual states.
+
+#### Root Causes Identified
+
+1. **Sleep Choreography Overrides Expression** - After the state machine set `expression = 'typing'` when `textboxOpen` was true, the sleep choreography overrode it to `'idle'` or `'sleepy'`.
+   - **Fix:** Added `textboxOpen` check to `canSleep` and `sleepBlockedByPriority` variables.
+
+2. **Random Happy Trigger Overrides** - The random happy trigger could set `expression = 'happy'` even when chat was open.
+   - **Fix:** Added `textboxOpen` check to prevent happy override when chat is open.
+
+3. **No Final Resolver** - No safety net to ensure chat-active mode always wins.
+   - **Fix:** Added final resolver after all choreography to force chat-active mode.
+
+#### Visual State Priority Resolver
+
+```typescript
+// Final resolver: Chat-active mode always wins
+if (textboxOpen && expression !== 'thinking') {
+  expression = 'typing'  // Force chat-active/yellow mode
+}
+```
+
+#### Problem 2: Memory Schema Missing Version Field
+The memory schema lacked a version field for future migration support.
+
+#### Fix
+- Added `version: number` field to `LongTermMemory` interface
+- Updated default memory structure to include `version: 1`
+- Updated Rust backend to include version in default memory
+
+#### Files Changed
+
+| File | Changes |
+|------|---------|
+| `src/components/BlobCanvas.tsx` | Fixed chat-open yellow mode with sleep/happy blockers and final resolver |
+| `src/lib/memory.ts` | Added `version` field to `LongTermMemory` interface |
+| `src/stores/memory.ts` | Added `version` to initial memory state |
+| `src-tauri/src/lib.rs` | Added `version` to default memory structure |
+
+#### Chat-Active Mode Tests
+
+- [x] Open chat by clicking blob → Blob turns yellow immediately
+- [x] Keep chat open for 30 seconds → Blob does not sleep
+- [x] Send messages → Blob still stays yellow visually
+- [x] Let LLM respond → Yellow remains the base visual
+- [x] Close chat → Normal modes resume
+- [x] Reopen chat → Yellow returns immediately
+
+#### Memory Storage
+
+- [x] Memory stored in user-scoped app data directory via Tauri
+- [x] Memory persists across app restarts
+- [x] Memory not stored in repo or gateway
+- [x] Both chat entry points use same memory
+
+---
+
+### 📅 June 18, 2026: Memory Retention Fix
+
+**Branch:** `fix/jelli-memory-retention`  
+**Status:** Complete
+
+#### Problem
+Jelli forgot important information too fast. Memory was not persisting correctly, not being injected into prompts reliably, and session context was lost on chat close or app restart.
+
+#### Root Causes Identified
+
+1. **Fact Extraction Too Narrow** - Only matched 7 patterns (name, age, job, location, interest, pet, favorite). Missing: projects, preferences, communication styles, tasks, goals.
+   - **Fix:** Expanded to 20+ patterns covering profile, preference, project, and task categories.
+
+2. **Session Facts Never Persisted to Long-Term** - `processMessage()` only updated session memory. Session facts lost on app restart.
+   - **Fix:** Auto-persist facts with `shouldPersist: true` to long-term storage.
+
+3. **Ollama Stripped Memory on Turn 2+** - Only injected short reminder: "stay in character as jelli..." Memory context completely lost after first message.
+   - **Fix:** Extract "Known user context:" section and include in every message.
+
+4. **Session Memory Reset on Restart** - `createSessionMemory()` called on app init. Previous session facts lost.
+   - **Fix:** Don't reset session on init; keep it alive across chat close/open.
+
+5. **No Session Summarization** - No rolling summary of conversation. No tracking of open tasks.
+   - **Fix:** Added rolling summary, open tasks, and message count.
+
+6. **Memory Context Format Too Weak** - Only showed "Context about user:" with flat list. Missing project/preference structure.
+   - **Fix:** Structured format with sections: User profile, Preferences, Projects, Other facts, Current session.
+
+7. **Memory Commands Not Implemented** - No `/memory`, `/forget`, `/remember`, `/new` commands.
+   - **Fix:** Added full command support in both chat components.
+
+#### Files Changed
+
+| File | Changes |
+|------|---------|
+| `src/lib/memory.ts` | Complete rewrite: 20+ extraction patterns, richer schema, command handlers |
+| `src/stores/memory.ts` | Zustand store with proper persistence, session management, auto-persist |
+| `src-tauri/src/lib.rs` | Updated `load_memory` to return proper default structure |
+| `src-tauri/src/llm.rs` | Fixed Ollama to include memory context on turn 2+ |
+| `src/lib/system-prompt.ts` | Updated to use new memory format |
+| `src/components/ChatInput.tsx` | Added memory command support |
+| `src/components/ChatTextbox.tsx` | Added memory command support |
+| `src/App.tsx` | Ensured both windows initialize memory |
+
+#### Memory Schema
+
+**LongTermMemory:**
+```typescript
+interface LongTermMemory {
+  userProfile: {
+    name?: string
+    nickname?: string
+    age?: number
+    sex?: string
+    languages?: string[]
+    communicationStyle?: string[]
+  }
+  preferences: {
+    tone?: string
+    responseLength?: string
+    codingStyle?: string
+    uiPreferences?: string[]
+  }
+  projects: Project[]
+  facts: UserFact[]
+}
+```
+
+**SessionMemory:**
+```typescript
+interface SessionMemory {
+  sessionId: string
+  startedAt: number
+  lastUpdatedAt: number
+  rollingSummary: string
+  recentImportantFacts: UserFact[]
+  openTasks: string[]
+  messagesProcessed: number
+}
+```
+
+#### Memory Commands
+
+| Command | Description |
+|---------|-------------|
+| `/memory` | Show saved memory summary |
+| `/forget <thing>` | Remove a memory item |
+| `/remember <fact>` | Explicitly save a fact |
+| `/new` or `/reset` | Start new session |
+
+#### Key Changes
+
+* **Comprehensive Memory Rewrite:** Expanded fact extraction rules with 20+ patterns for profile, preference, project, and task facts. Richer schema with `LongTermMemory` structure.
+
+* **Session Persistence:** Session memory now persists facts to long-term storage automatically when they have `shouldPersist: true`.
+
+* **Ollama Memory Fix:** Updated [llm.rs](src-tauri/src/llm.rs) to include memory context in the reminder on turn 2+. Extracts "Known user context:" section from system prompt and includes it in every message.
+
+* **Cross-Window Memory Sync:** Both windows initialize memory on startup via `useMemoryStore.getState().initialize()`. Memory store is shared via Zustand, ensuring both floating textbox and full chat panel use the same memory context.
+
+* **Privacy Handling:** Memory extraction respects privacy - only saves facts with explicit patterns, does not guess personal data, does not save sensitive data unless explicitly asked.
+
+#### Testing Checklist
+
+- [x] Same-session memory: Tell Jelli "my favorite color is blue", ask later "what is my favorite color?"
+- [x] Chat close memory: Tell Jelli project name, close chat, reopen, ask about project
+- [x] App restart memory: Tell Jelli name, restart app, ask "what is my name?"
+- [x] Preference memory: Tell Jelli "don't be formal", restart, verify casual tone
+- [x] Project memory: Tell Jelli about project, reset session, ask "what were we working on?"
+- [x] Memory safety: Send random text, confirm not saved; send sensitive info without asking to remember
+- [x] Both chat entry points: Test memory from floating textbox and full chat panel
+- [x] Prompt inspection: Verify memory context included in final prompt payload
+
+#### Build Status
+- [x] TypeScript compiles
+- [x] Vite build succeeds
+- [x] Lint passes (1 pre-existing warning)
+
+### 📅 June 18, 2026: Memory System & Chat-Open Yellow Mode
+
+* **Long-Term Memory:** Implemented persistent user memory system with:
+  - [memory.ts](src/lib/memory.ts): Fact extraction rules, session memory, prompt formatting
+  - [memory.ts store](src/stores/memory.ts): Zustand store for memory state management
+  - Rust commands `save_memory`/`load_memory` in [lib.rs](src-tauri/src/lib.rs) for disk persistence
+  - Rule-based fact extraction (name, age, job, location, interests, pet, favorites)
+  - Compact typed schema to avoid wasting LLM tokens
+
+* **Session Memory:** Per-session context that extracts facts from user messages and merges with long-term memory for prompt injection.
+
+* **Memory Integration:** Updated [system-prompt.ts](src/lib/system-prompt.ts) to inject memory context into LLM prompts. Both [ChatTextbox.tsx](src/components/ChatTextbox.tsx) and [ChatInput.tsx](src/components/ChatInput.tsx) process messages for fact extraction.
+
+* **Chat-Open Yellow Mode:** Modified [BlobCanvas.tsx](src/components/BlobCanvas.tsx) expression state machine to give chat-open highest priority (except processing). When chat window is open, blob stays yellow regardless of other states (sleep, idle, happy, shy, angry, annoyed).
+
+* **Cross-Window Sync:** Chat window now syncs `textboxOpen` state via IPC events, ensuring both windows have consistent chat-open state for visual priority.
+
 ### 📅 June 18, 2026: Secure Cloud Gateway Proxy Refactor & Persona Sync
 > [!IMPORTANT]
 > Migrated the 3-Tier Cascading Failover Gateway to a centralized serverless Cloudflare Worker proxy (`jelli-gateway`) to abstract developer API keys, secure the app bundle against decompilation, and prevent sniffing (Wireshark).
@@ -340,6 +600,16 @@ pip install -r sidecar/requirements.txt
 * **Ollama Target Injection Fix:** Patched [llm.rs](file:///d:/Jelli/jelli-companion/src-tauri/src/llm.rs) to target the *last* user message in the thread. Prepend system persona reminder on turn 2+ ("stay in character as jelli — lowercase, 1 sentence, emojis, gen z texting, no periods") to maintain consistency without inflating context size.
 * **Few-Shot Prompt Extraction:** Extracted training prompt examples into `FEW_SHOT_MESSAGES` in [system-prompt.ts](file:///d:/Jelli/jelli-companion/src/lib/system-prompt.ts) and prepended them directly as conversation history. This forces smaller LLMs (e.g. Qwen:4b) to weigh character constraints more heavily.
 * **Base Prompt Tightening:** Tightened `BASE_PROMPT` down to 6 core lines to maximize attention weights. Rewrote all `MOOD_SUFFIXES` as tone modifiers to prevent contradiction rules.
+* **Code Cleanups:** Replaced curly quotes with ASCII apostrophes in system prompt blocks to avoid esbuild parsing issues, and filtered out thinking state messages in [ChatTextbox.tsx](file:///d:/Jelli/jelli-companion/src/components/ChatTextbox.tsx) before compiling context vectors.
+
+### 📅 June 18, 2026: Personality Delivery & Persona Sync
+> [!IMPORTANT]
+> Fixed a critical issue where Jelli was responding formally ("I am doing well, thank you for asking.") instead of using its casual character rules.
+
+* **Cross-Window Expression Sync:** Added Tauri IPC events in [api.ts](file:///d:/Jelli/jelli-companion/src/lib/api.ts) (`emitExpressionChanged`/`onExpressionChanged`). The canvas emits expression changes to notify ChatTextbox and ChatInput immediately, applying appropriate mood suffixes during floating chat sessions.
+* **Ollama Target Injection Fix:** Patched [llm.rs](file:///d:/Jelli/jelli-companion/src-tauri/src/llm.rs) to target the *last* user message in the thread. Prepend system persona reminder on turn 2+ ("stay in character as jelli — lowercase, 1 sentence, emojis, gen z texting, no periods") to maintain consistency without inflating context size.
+* **Few-Shot Prompt Extraction:** Extracted training prompt examples into `FEW_SHOT_MESSAGES` in [system-prompt.ts](file:///d:/Jelli/jelli-companion/src/lib/system-prompt.ts) and prepended them directly as conversation history. This forces smaller LLMs (e.g. Qwen:4b) to weigh character constraints more heavily.
+* **Base Prompt Tightening:** Tightened `BASE_PROMPT` down to 6 core lines to maximize attention weights. Rewrote all `MOOD_SUFFIXES` as tone modifiers to prevent contradiction rules (e.g. happy mode no longer conflicts with lowercase directives).
 * **Code Cleanups:** Replaced curly quotes with ASCII apostrophes in system prompt blocks to avoid esbuild parsing issues, and filtered out thinking state messages in [ChatTextbox.tsx](file:///d:/Jelli/jelli-companion/src/components/ChatTextbox.tsx) before compiling context vectors.
 
 ### 📅 June 17, 2026: Persistence & Dynamic UI Controls

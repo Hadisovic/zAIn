@@ -3,6 +3,7 @@ import { create } from 'zustand'
 export type LLMProvider = 'ollama' | 'openai' | 'anthropic' | 'gemini' | 'deepseek' | 'gateway'
 export type VizPreset = 'orb' | 'wave' | 'galaxy' | 'tunnel'
 export type BlobExpression = 'idle' | 'annoyed' | 'dizzy' | 'sleepy' | 'happy' | 'surprised' | 'shy' | 'mad' | 'typing' | 'thinking'
+export type MainView = 'blob' | 'chat' | 'settings'
 
 interface ConfigStore {
   llmProvider: LLMProvider
@@ -18,6 +19,7 @@ interface ConfigStore {
   expanded: boolean
   textboxOpen: boolean
   settingsOpen: boolean
+  mainView: MainView
   isDragging: boolean
   blobScreenPos: { x: number; y: number } | null
   // ── New settings ──
@@ -27,6 +29,8 @@ interface ConfigStore {
   blobSize: number
   alwaysOnTop: boolean
   currentExpression: BlobExpression
+  sfxVolume: number
+  sfxMuted: boolean
   // ── Setters ──
   setLlmProvider: (p: LLMProvider) => void
   setLlmModel: (m: string) => void
@@ -41,6 +45,7 @@ interface ConfigStore {
   setExpanded: (v: boolean) => void
   setTextboxOpen: (v: boolean) => void
   setSettingsOpen: (v: boolean) => void
+  setMainView: (v: MainView) => void
   setIsDragging: (v: boolean) => void
   setBlobScreenPos: (pos: { x: number; y: number } | null) => void
   setBlobOpacity: (v: number) => void
@@ -49,6 +54,8 @@ interface ConfigStore {
   setBlobSize: (v: number) => void
   setAlwaysOnTop: (v: boolean) => void
   setCurrentExpression: (e: BlobExpression) => void
+  setSfxVolume: (v: number) => void
+  setSfxMuted: (v: boolean) => void
   // Bulk loader
   loadSettings: (s: Partial<ConfigStore>) => void
 }
@@ -67,6 +74,7 @@ export const useConfigStore = create<ConfigStore>((set) => ({
   expanded: false,
   textboxOpen: false,
   settingsOpen: false,
+  mainView: 'blob',
   isDragging: false,
   blobScreenPos: null,
   blobOpacity: 1.0,
@@ -75,6 +83,8 @@ export const useConfigStore = create<ConfigStore>((set) => ({
   blobSize: 200,
   alwaysOnTop: true,
   currentExpression: 'idle',
+  sfxVolume: 0.7,
+  sfxMuted: false,
   setLlmProvider: (llmProvider) => set({ llmProvider }),
   setLlmModel: (llmModel) => set({ llmModel }),
   setApiKey: (apiKey) => set({ apiKey }),
@@ -88,6 +98,7 @@ export const useConfigStore = create<ConfigStore>((set) => ({
   setExpanded: (expanded) => set({ expanded }),
   setTextboxOpen: (textboxOpen) => set({ textboxOpen }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  setMainView: (mainView) => set({ mainView }),
   setIsDragging: (isDragging) => set({ isDragging }),
   setBlobScreenPos: (blobScreenPos) => set({ blobScreenPos }),
   setBlobOpacity: (blobOpacity) => set({ blobOpacity }),
@@ -96,6 +107,8 @@ export const useConfigStore = create<ConfigStore>((set) => ({
   setBlobSize: (blobSize) => set({ blobSize }),
   setAlwaysOnTop: (alwaysOnTop) => set({ alwaysOnTop }),
   setCurrentExpression: (currentExpression) => set({ currentExpression }),
+  setSfxVolume: (sfxVolume) => set({ sfxVolume }),
+  setSfxMuted: (sfxMuted) => set({ sfxMuted }),
   loadSettings: (s) => set((prev) => ({
     ...prev,
     ...s,
@@ -103,6 +116,7 @@ export const useConfigStore = create<ConfigStore>((set) => ({
     expanded: prev.expanded,
     textboxOpen: prev.textboxOpen,
     settingsOpen: prev.settingsOpen,
+    mainView: prev.mainView,
     isDragging: prev.isDragging,
     blobScreenPos: prev.blobScreenPos,
   })),

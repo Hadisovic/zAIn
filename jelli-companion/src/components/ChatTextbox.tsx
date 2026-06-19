@@ -2,7 +2,9 @@ import { useRef, useEffect, useCallback, useState } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { useConfigStore } from '@/stores/config'
 import { useChatStore } from '@/stores/chat'
+import { useMemoryStore } from '@/stores/memory'
 import { sendChatMessage, hideChatWindow, resizeWindow, emitUserTyping, emitUserIdle, getScreenSize, emitOpenSettings, onShowChatWindow, onHideChatWindow, onExpressionChanged } from '@/lib/api'
+import { handleMemoryCommand, extractFacts } from '@/lib/memory'
 
 const CHAT_INPUT_HEIGHT = 56  // input row + padding
 const CHAT_MIN_H = 56        // just the input row
@@ -11,6 +13,10 @@ const CHAT_MAX_H = 320       // never exceed this
 const COMMANDS = [
   { value: '/settings', label: '/settings', desc: 'Open settings' },
   { value: '/clear', label: '/clear', desc: 'Clear chat history' },
+  { value: '/memory', label: '/memory', desc: 'Show saved memory' },
+  { value: '/forget', label: '/forget <thing>', desc: 'Forget a fact' },
+  { value: '/remember', label: '/remember <fact>', desc: 'Remember a fact' },
+  { value: '/new', label: '/new', desc: 'Start new session' },
 ]
 
 function generateUUID(): string {
@@ -82,6 +88,7 @@ export function ChatTextbox() {
     onShowChatWindow(() => {
       if (!active) return
       setIsOpen(true)
+      useConfigStore.getState().setTextboxOpen(true)
     }).then((fn) => {
       if (!active) { fn(); return; }
       unlistenShow = fn
@@ -90,6 +97,7 @@ export function ChatTextbox() {
     onHideChatWindow(() => {
       if (!active) return
       setIsOpen(false)
+      useConfigStore.getState().setTextboxOpen(false)
     }).then((fn) => {
       if (!active) { fn(); return; }
       unlistenHide = fn
@@ -284,10 +292,53 @@ export function ChatTextbox() {
       return
     }
 
+    // Handle memory commands
+    if (text.startsWith('/memory') || text.startsWith('/forget') || text.startsWith('/remember') || text.startsWith('/new') || text.startsWith('/reset')) {
+      const command = text.split(' ')[0]
+      const args = text.slice(command.length).trim()
+      const memoryState = useMemoryStore.getState().getMemoryState()
+      const result = handleMemoryCommand(command, args, memoryState)
+
+      addMessage({ text, role: 'user', status: 'sent' })
+
+      if (result.action === 'clear') {
+        useMemoryStore.getState().resetSession()
+        useChatStore.getState().clearMessages()
+      } else if (result.action === 'remove') {
+        // Extract the key to remove
+        const keyMatch = args.match(/name|nickname|age|job|location|language|interest|pet|favorite/i)
+        if (keyMatch) {
+          useMemoryStore.getState().removeFact(keyMatch[0])
+        }
+      } else if (result.action === 'add') {
+        // Add the fact manually
+        const facts = extractFacts(args)
+        if (facts.length > 0) {
+          useMemoryStore.getState().addFacts(facts)
+        } else {
+          // If no pattern matched, add as a generic fact
+          useMemoryStore.getState().addFact({
+            key: 'customFact',
+            value: args,
+            source: 'explicit',
+            confidence: 1.0,
+            shouldPersist: true,
+            updatedAt: Date.now(),
+          })
+        }
+      }
+
+      addMessage({ text: result.response, role: 'assistant', status: 'done' })
+      return
+    }
+
     setSendFlash(true)
     setTimeout(() => setSendFlash(false), 600)
 
     addMessage({ text, role: 'user', status: 'sent' })
+
+    // Process user message for fact extraction
+    useMemoryStore.getState().processMessage(text)
 
     const assistantMsgId = addMessage({
       text: '',

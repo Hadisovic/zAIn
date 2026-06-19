@@ -1,4 +1,6 @@
 import type { BlobExpression } from '@/stores/config'
+import { useMemoryStore } from '@/stores/memory'
+import { formatMemoryContext } from '@/lib/memory'
 
 // ── Core persona (short, no contradictions) ──────────────────────────────────
 // Models weight first lines heavily. Rules that conflict with style examples
@@ -67,7 +69,22 @@ mood: processing their message. "hmm let me think...", "ok so...", thoughtful.`,
 
 export function getSystemPrompt(expression?: BlobExpression): string {
   const mood = expression ?? 'idle'
-  return BASE_PROMPT + (MOOD_SUFFIXES[mood] ?? MOOD_SUFFIXES.idle)
+  const basePrompt = BASE_PROMPT + (MOOD_SUFFIXES[mood] ?? MOOD_SUFFIXES.idle)
+
+  // Inject memory context if available
+  const memoryState = useMemoryStore.getState()
+  if (memoryState.initialized) {
+    const memoryContext = formatMemoryContext({
+      longTerm: memoryState.longTerm,
+      session: memoryState.session,
+      initialized: memoryState.initialized,
+    })
+    if (memoryContext) {
+      return `${basePrompt}\n\n${memoryContext}`
+    }
+  }
+
+  return basePrompt
 }
 
 // Legacy export for backwards compatibility

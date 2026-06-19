@@ -1,11 +1,17 @@
 import { useRef, useCallback, useEffect, useState } from 'react'
 import { useChatStore } from '@/stores/chat'
 import { useConfigStore } from '@/stores/config'
+import { useMemoryStore } from '@/stores/memory'
 import { sendChatMessage, generateRequestId, emitUserTyping, emitUserIdle, onExpressionChanged } from '@/lib/api'
+import { handleMemoryCommand, extractFacts } from '@/lib/memory'
 
 const COMMANDS = [
   { value: '/settings', label: '/settings', desc: 'Open settings' },
   { value: '/clear', label: '/clear', desc: 'Clear chat history' },
+  { value: '/memory', label: '/memory', desc: 'Show saved memory' },
+  { value: '/forget', label: '/forget <thing>', desc: 'Forget a fact' },
+  { value: '/remember', label: '/remember <fact>', desc: 'Remember a fact' },
+  { value: '/new', label: '/new', desc: 'Start new session' },
 ]
 
 export function ChatInput() {
@@ -49,8 +55,7 @@ export function ChatInput() {
     }
 
     if (text === '/settings') {
-      config.setExpanded(true)
-      config.setSettingsOpen(true)
+      config.setMainView('settings')
       return
     }
 
@@ -59,7 +64,50 @@ export function ChatInput() {
       return
     }
 
+    // Handle memory commands
+    if (text.startsWith('/memory') || text.startsWith('/forget') || text.startsWith('/remember') || text.startsWith('/new') || text.startsWith('/reset')) {
+      const command = text.split(' ')[0]
+      const args = text.slice(command.length).trim()
+      const memoryState = useMemoryStore.getState().getMemoryState()
+      const result = handleMemoryCommand(command, args, memoryState)
+
+      addMessage({ text, role: 'user', status: 'sent' })
+
+      if (result.action === 'clear') {
+        useMemoryStore.getState().resetSession()
+        useChatStore.getState().clearMessages()
+      } else if (result.action === 'remove') {
+        // Extract the key to remove
+        const keyMatch = args.match(/name|nickname|age|job|location|language|interest|pet|favorite/i)
+        if (keyMatch) {
+          useMemoryStore.getState().removeFact(keyMatch[0])
+        }
+      } else if (result.action === 'add') {
+        // Add the fact manually
+        const facts = extractFacts(args)
+        if (facts.length > 0) {
+          useMemoryStore.getState().addFacts(facts)
+        } else {
+          // If no pattern matched, add as a generic fact
+          useMemoryStore.getState().addFact({
+            key: 'customFact',
+            value: args,
+            source: 'explicit',
+            confidence: 1.0,
+            shouldPersist: true,
+            updatedAt: Date.now(),
+          })
+        }
+      }
+
+      addMessage({ text: result.response, role: 'assistant', status: 'done' })
+      return
+    }
+
     addMessage({ text, role: 'user', status: 'sent' })
+
+    // Process user message for fact extraction
+    useMemoryStore.getState().processMessage(text)
 
     setProcessing(true)
     const thinkingId = addMessage({ text: '', role: 'assistant', status: 'thinking' })

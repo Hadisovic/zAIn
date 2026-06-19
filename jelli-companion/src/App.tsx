@@ -1,11 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { BlobCanvas } from '@/components/BlobCanvas'
 import { ChatWidget } from '@/components/ChatWidget'
 import { ChatTextbox } from '@/components/ChatTextbox'
+import { SettingsPanel } from '@/components/SettingsPanel'
 import { useConfigStore } from '@/stores/config'
 import { useChatStore } from '@/stores/chat'
-import { startSidecar, stopSidecar, onLlmToken, onLlmDone, onLlmClear, onLlmError, onAudioChunk, onAudioDone, onSidecarStatus, hideChatWindow, getWindowLabel, loadSettings, onOpenSettings } from '@/lib/api'
+import { useMemoryStore } from '@/stores/memory'
+import { startSidecar, stopSidecar, onLlmToken, onLlmDone, onLlmClear, onLlmError, onAudioChunk, onAudioDone, onSidecarStatus, hideChatWindow, getWindowLabel, loadSettings, onOpenSettings, setWindowGeometry, getWindowPosition } from '@/lib/api'
 import { audioPlayer } from '@/lib/audio'
+import { loadSounds } from '@/lib/sfx'
 
 const isDev = import.meta.env.DEV
 
@@ -21,6 +24,12 @@ function App() {
     loadSettings().then((data) => {
       useConfigStore.getState().loadSettings(data as Record<string, unknown>)
     }).catch(() => {})
+    loadSounds().catch(() => {})
+  }, [])
+
+  // Load persisted memory on startup - both windows need this
+  useEffect(() => {
+    useMemoryStore.getState().initialize()
   }, [])
 
   // Apply blob opacity to canvas
@@ -53,17 +62,23 @@ function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.code === 'Space') {
         e.preventDefault()
-        const expanded = useConfigStore.getState().expanded
-        useConfigStore.getState().setExpanded(!expanded)
+        const { mainView } = useConfigStore.getState()
+        if (mainView === 'chat') {
+          useConfigStore.getState().setMainView('blob')
+        } else {
+          useConfigStore.getState().setMainView('chat')
+        }
       }
       if (e.key === 'Escape') {
         const textboxOpen = useConfigStore.getState().textboxOpen
-        const expanded = useConfigStore.getState().expanded
-        if (textboxOpen) {
+        const { mainView } = useConfigStore.getState()
+        if (mainView === 'settings') {
+          useConfigStore.getState().setMainView('blob')
+        } else if (textboxOpen) {
           useConfigStore.getState().setTextboxOpen(false)
           hideChatWindow().catch(() => {})
-        } else if (expanded) {
-          useConfigStore.getState().setExpanded(false)
+        } else if (mainView === 'chat') {
+          useConfigStore.getState().setMainView('blob')
         }
       }
     }
@@ -190,8 +205,7 @@ function App() {
 
     onOpenSettings(() => {
       if (!active) return
-      useConfigStore.getState().setExpanded(true)
-      useConfigStore.getState().setSettingsOpen(true)
+      useConfigStore.getState().setMainView('settings')
     }).then((fn) => {
       if (!active) { fn(); return; }
       unlisten = fn
@@ -203,6 +217,36 @@ function App() {
     }
   }, [windowLabel])
 
+  // Resize window when settings opens/closes
+  const mainView = useConfigStore((s) => s.mainView)
+  const prevViewRef = useRef(mainView)
+
+  useEffect(() => {
+    if (windowLabel !== 'main') return
+    const prevView = prevViewRef.current
+    prevViewRef.current = mainView
+
+    const resize = async () => {
+      try {
+        const pos = await getWindowPosition()
+        if (mainView === 'settings') {
+          // Open settings: resize to 430x640, center on current position
+          const newX = pos.x - Math.round((430 - 140) / 2)
+          const newY = pos.y - Math.round((640 - 160) / 2)
+          await setWindowGeometry(newX, newY, 430, 640)
+        } else if (prevView === 'settings') {
+          // Close settings: restore to blob size
+          const newX = pos.x + Math.round((430 - 140) / 2)
+          const newY = pos.y + Math.round((640 - 160) / 2)
+          await setWindowGeometry(newX, newY, 140, 160)
+        }
+      } catch (e) {
+        console.error('[App] Settings resize failed:', e)
+      }
+    }
+    resize()
+  }, [mainView, windowLabel])
+
   if (windowLabel === 'chat') {
     return <ChatTextbox />
   }
@@ -212,7 +256,10 @@ function App() {
       <div style={{ opacity: blobOpacity }}>
         <BlobCanvas />
       </div>
-      <ChatWidget />
+      {mainView === 'chat' && <ChatWidget />}
+      {mainView === 'settings' && (
+        <SettingsPanel open onClose={() => useConfigStore.getState().setMainView('blob')} />
+      )}
     </>
   )
 }

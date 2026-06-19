@@ -3,6 +3,7 @@ import { useConfigStore } from '@/stores/config'
 import { useChatStore } from '@/stores/chat'
 import { BLOB } from '@/lib/constants'
 import { getWindowPosition, setWindowPosition, showChatWindow, getScreenInfo, setChatWindowPosition, getCursorPosition, onUserTyping, onUserIdle, emitShowChatWindow, emitHideChatWindow, emitExpressionChanged } from '@/lib/api'
+import { play as playSfx } from '@/lib/sfx'
 
 const DRAG_THRESHOLD = 6
 const CHAT_W = 360
@@ -452,6 +453,9 @@ export function BlobCanvas() {
 
       if (processing) {
         expression = 'thinking'
+      } else if (textboxOpen) {
+        // Chat open — override all other expressions, stay yellow
+        expression = 'typing'
       } else if (dragging) {
         if (dragMs > RAGE_HOLD_MS) {
           expression = 'dizzy'
@@ -504,8 +508,6 @@ export function BlobCanvas() {
           happyTotalRef.current = 0
         }
         expression = 'happy'
-      } else if (textboxOpen) {
-        expression = 'typing'
       } else if (isUserTypingRef.current) {
         expression = 'typing'
       } else if (idleMs > SLEEP_IDLE_MS) {
@@ -523,10 +525,12 @@ export function BlobCanvas() {
         && !ragSequenceActiveRef.current
         && happyCooldownRef.current <= 0
         && !mouseNearBlob
+        && !textboxOpen  // Chat open blocks sleep
       const sleepBlockedByPriority = processing
         || dragging
         || ragSequenceActiveRef.current
         || happyCooldownRef.current > 0
+        || textboxOpen  // Chat open blocks sleep transitions
       if (sleepBlockedByPriority) {
         sleepTransitionRef.current = 0
         sleepOutroRef.current = 0
@@ -583,18 +587,25 @@ export function BlobCanvas() {
       // Decay the post-mad recovery timer
       if (madRecoveryRef.current > 0) madRecoveryRef.current = tickTimer(madRecoveryRef.current, dt)
 
-      // Happy: rare, long (60-120s). Blocked during rage sequence.
+      // Happy: rare, long (60-120s). Blocked during rage sequence and when chat is open.
       if (expression === 'idle'
         && !dragging
         && !processing
         && !ragSequenceActiveRef.current
         && madRecoveryRef.current <= 0
         && happyCooldownRef.current <= 0
+        && !textboxOpen  // Chat open blocks happy override
         && Math.random() < 0.00001) {
         const happyDuration = 60 + Math.random() * 60
         happyCooldownRef.current = happyDuration
         happyTotalRef.current = happyDuration
         expression = 'happy'
+      }
+
+      // ── Final resolver: Chat-active mode always wins ──────────────
+      // This ensures chat-active mode is never overridden by any other state
+      if (textboxOpen && expression !== 'thinking') {
+        expression = 'typing'  // Force chat-active/yellow mode
       }
 
       // ── Transition choreography ─────────────────────────────────
@@ -604,6 +615,13 @@ export function BlobCanvas() {
         popRef.current = 0.12  // small scale pulse on mode change
         useConfigStore.getState().setCurrentExpression(expression)
         emitExpressionChanged(expression)
+
+        // ── Sound effects on expression change ──────────────────
+        if (expression === 'happy') playSfx('happy')
+        else if (expression === 'dizzy') playSfx('dizzy')
+        else if (expression === 'mad') playSfx('mad')
+        else if (expression === 'sleepy') playSfx('sleep')
+        else if (prevExpressionSaved === 'sleepy') playSfx('wake')
       }
       prevExpressionRef.current = expression
       if (transitionTimerRef.current < 1) {
@@ -1556,6 +1574,7 @@ export function BlobCanvas() {
       isPointerDownRef.current = false
 
       if (!didDragRef.current) {
+        playSfx('click')
         const open = useConfigStore.getState().textboxOpen
         if (open) {
           setTextboxOpen(false)
